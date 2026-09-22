@@ -262,6 +262,40 @@ def write_csv(results, path):
                             c.get("localId", ""), c.get("name", ""), c.get("id", "")])
 
 
+def write_json(results, unmatched, path):
+    """Machine-readable version of the report, grouped by set, for downstream
+    tools (e.g. marketplace search). Rarity and finish aren't known here --
+    TCGdex's bulk set listing doesn't carry them -- so they're always null."""
+    sets = []
+    for r in results:
+        sets.append({
+            "set_id": r["set_id"],
+            "set_name": r["set_name"],
+            "language": r["language"],
+            "tcgdex_lang": r["tcgdex_lang"],
+            "total": r["total"],
+            "owned": r["owned_count"],
+            "missing": [{
+                "card_id": c.get("id"),
+                "set_id": r["set_id"],
+                "set_name": r["set_name"],
+                "local_id": c.get("localId"),
+                "name": c.get("name"),
+                "language": r["language"],
+                "tcgdex_lang": r["tcgdex_lang"],
+                "rarity": None,
+                "finish": None,
+            } for c in r["missing"]],
+        })
+    data = {
+        "sets": sets,
+        "unmatched": [{"set_name": n, "language": lang, "reason": why}
+                      for n, lang, why in unmatched],
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 # --------------------------------------------------------------------- CLI --
 
 def build_arg_parser():
@@ -283,6 +317,8 @@ def build_arg_parser():
                    help="Set name -> TCGdex code overrides file (default: set_map.json).")
     p.add_argument("--out", default="missing_cards.csv",
                    help="CSV to write the missing cards to (default: %(default)s).")
+    p.add_argument("--json", metavar="FILE",
+                   help="Also write the missing cards as JSON, grouped by set.")
     return p
 
 
@@ -312,6 +348,9 @@ def main(argv=None):
     print_report(results, unmatched)
     write_csv(results, args.out)
     print(f"Wrote {sum(len(r['missing']) for r in results)} row(s) to {os.path.abspath(args.out)}")
+    if args.json:
+        write_json(results, unmatched, args.json)
+        print(f"Wrote JSON to {os.path.abspath(args.json)}")
 
 
 if __name__ == "__main__":

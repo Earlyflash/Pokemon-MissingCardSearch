@@ -59,6 +59,27 @@ MEGA Dream ex [M2a, Japanese]: own <owned>/<total>, missing <n>
 | Card Name | TCGdex's card name (in that language's dataset) |
 | TCGdex Card ID | Stable id, handy for the next step (marketplace search) |
 
+`--json FILE` writes the same data grouped by set, plus any sets it couldn't
+match, for other tools to consume:
+
+```json
+{
+  "sets": [{
+    "set_id": "M2a", "set_name": "MEGA Dream ex", "language": "Japanese",
+    "tcgdex_lang": "ja", "total": 250, "owned": 180,
+    "missing": [{
+      "card_id": "M2a-002", "set_id": "M2a", "set_name": "MEGA Dream ex",
+      "local_id": "002", "name": "フシギソウ", "language": "Japanese",
+      "tcgdex_lang": "ja", "rarity": null, "finish": null
+    }]
+  }],
+  "unmatched": [{"set_name": "...", "language": "English", "reason": "no TCGdex set found"}]
+}
+```
+
+`rarity` and `finish` are always `null` for now: TCGdex's set listing doesn't
+include them, and fetching rarity costs one request per card.
+
 ### Flags
 
 | Flag | Meaning |
@@ -70,6 +91,7 @@ MEGA Dream ex [M2a, Japanese]: own <owned>/<total>, missing <n>
 | `--map "NAME=CODE"` | Match a RareCandy set name to a TCGdex set code for this run (repeatable). |
 | `--set-map FILE` | Set name overrides file (default `set_map.json`). |
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv`). |
+| `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
 
 ## How it works
 

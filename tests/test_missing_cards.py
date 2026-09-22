@@ -204,6 +204,33 @@ class MainTests(unittest.TestCase):
         self.assertEqual({r["Set Name"] for r in rows}, {"MEGA Dream ex"})
         self.assertEqual(len(rows), 2)
 
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_json_output(self, _):
+        import json
+        export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1),
+                               ("X", "Mystery", "5", "English", 1)])
+        out = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        out_json = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+        try:
+            with redirect_stdout(io.StringIO()):
+                missing_cards.main(["--csv", export, "--out", out, "--json", out_json])
+            with open(out_json, encoding="utf-8") as f:
+                data = json.load(f)
+        finally:
+            for p in (export, out, out_json):
+                os.unlink(p)
+        [m2a] = data["sets"]
+        self.assertEqual((m2a["set_id"], m2a["tcgdex_lang"], m2a["owned"], m2a["total"]),
+                         ("M2a", "ja", 1, 3))
+        self.assertEqual(m2a["missing"][0], {
+            "card_id": "M2a-002", "set_id": "M2a", "set_name": "MEGA Dream ex",
+            "local_id": "002", "name": "フシギソウ", "language": "Japanese",
+            "tcgdex_lang": "ja", "rarity": None, "finish": None,
+        })
+        self.assertEqual(data["unmatched"],
+                         [{"set_name": "Mystery", "language": "English",
+                           "reason": "no TCGdex set found"}])
+
     def test_bad_map_flag_exits(self):
         export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1)])
         try:
