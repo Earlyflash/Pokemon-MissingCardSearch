@@ -141,14 +141,16 @@ def converted(offer, rates):
 
 def rank_offers(groups, offers, rates, include_uncertain=False):
     """{(set index, card_id): [(converted price or None, Offer), ...]}
-    cheapest first; offers with no converted price go last."""
+    cheapest first, raw cards ahead of graded slabs (a slab is only the
+    cheapest when no raw copy is for sale); offers with no converted price
+    go last."""
     ranked = {(gi, c.card_id): [] for gi, (_, cards) in enumerate(groups) for c in cards}
     for gi, o in offers:
         if o.match == MATCH_UNCERTAIN and not include_uncertain:
             continue
         ranked[(gi, o.card_id)].append((converted(o, rates), o))
     for lst in ranked.values():
-        lst.sort(key=lambda po: (po[0] is None, po[0] or 0))
+        lst.sort(key=lambda po: (po[1].grade is not None, po[0] is None, po[0] or 0))
     return ranked
 
 
@@ -170,7 +172,8 @@ def print_report(groups, ranked, currency, plugin_results, skipped):
             if best[c.card_id]:
                 price, o = best[c.card_id][0]
                 shown = f"{currency} {price:.2f}" if price is not None else f"{o.currency} {o.price}"
-                print(f"  #{c.local_id:<8} {c.name}  {shown} on {o.marketplace}")
+                graded = f" (graded {o.grade})" if o.grade else ""
+                print(f"  #{c.local_id:<8} {c.name}  {shown} on {o.marketplace}{graded}")
         not_found = [c.local_id for c in cards if not best[c.card_id]]
         if not_found:
             print(f"  Not found for sale: {', '.join('#' + n for n in not_found)}")
@@ -186,7 +189,7 @@ def print_report(groups, ranked, currency, plugin_results, skipped):
 def write_csv(groups, ranked, currency, path, cheapest_only=False):
     cols = ["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name", "TCGdex Card ID",
             "Marketplace", f"Price ({currency})", "Listed Price", "Listed Currency", "Condition",
-            "Seller", "Quantity", "Match", "Listing Title", "URL"]
+            "Grade", "Seller", "Quantity", "Match", "Listing Title", "URL"]
     rows = 0
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -199,7 +202,8 @@ def write_csv(groups, ranked, currency, path, cheapest_only=False):
                 for price, o in offers:
                     w.writerow([set_entry["set_name"], c.set_id, c.language, c.local_id, c.name,
                                 c.card_id, o.marketplace, "" if price is None else f"{price:.2f}",
-                                str(o.price), o.currency, o.condition or "", o.seller or "",
+                                str(o.price), o.currency, o.condition or "", o.grade or "",
+                                o.seller or "",
                                 "" if o.quantity is None else o.quantity, o.match, o.title, o.url])
                     rows += 1
     return rows

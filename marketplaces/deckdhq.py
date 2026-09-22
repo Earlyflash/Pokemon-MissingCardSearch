@@ -82,56 +82,93 @@ def listing_language(listing):
     return None
 
 
-def set_matches(listing, card):
-    """(matched, from_title): does the listing belong to the card's set?"""
+def is_promo(set_name):
+    return bool({"promo", "promos"} & set(normalize_text(set_name).split()))
+
+
+def listing_numbers(listing):
+    if listing.get("cardNumber"):
+        return {normalize_number(listing["cardNumber"])}
+    return title_numbers(listing.get("cardName"))
+
+
+def number_match(listing, card):
+    """'prefixed' when the numbers agree including a letter prefix that pins
+    the set ('SWSH281', or 'SVP 176' for Scarlet & Violet promo 176),
+    'plain' when bare numbers agree, else None."""
+    want = normalize_number(card.local_id)
+    have = listing_numbers(listing)
+    if want in have:
+        return "prefixed" if want[:1].isalpha() else "plain"
+    code = normalize_number(card.set_id).replace(".", "")
+    if code and any(h.startswith(code) and h[len(code):] == want for h in have):
+        return "prefixed"
+    return None
+
+
+def set_match(listing, card, numbers):
+    """How the listing is tied to the card's set: 'name' (same set name),
+    'code' (set name carries the card's set code, e.g. "m2 Inferno X"),
+    'promo' (both are promo sets), 'title' (eBay import whose title names the
+    set, or carries a set-code number like 'SVP 176'), or None."""
     wanted = normalize_text(card.set_name)
     code = normalize_text(card.set_id)
     set_name = listing.get("setName")
     if set_name:
-        have = normalize_text(set_name)
-        if have == wanted:
-            return True, False
-        # Shopify rows sometimes prefix a set code: "m2 Inferno X", "Black Star Promo SVP".
-        words = have.split()
+        words = normalize_text(set_name).split()
+        if " ".join(words) == wanted:
+            return "name"
         if words and (words[0] == code or words[-1] == code):
-            return True, False
+            return "code"
         if len(words) > 1 and " ".join(words[1:]) == wanted:
-            return True, False
-        return False, False
-    return has_phrase(normalize_text(listing.get("cardName")), wanted), True
-
-
-def number_matches(listing, card):
-    """Card numbers equal, also when the listing prefixes the set code
-    ('SVP 176' for Scarlet & Violet promo 176)."""
-    want = normalize_number(card.local_id)
-    if listing.get("cardNumber"):
-        have = {normalize_number(listing["cardNumber"])}
-    else:
-        have = title_numbers(listing.get("cardName"))
-    code = normalize_number(card.set_id).replace(".", "")
-    return want in have or any(h.startswith(code) and h[len(code):] == want for h in have if code)
+            return "name"
+        if is_promo(set_name) and is_promo(card.set_name):
+            return "promo"
+        return None
+    if has_phrase(normalize_text(listing.get("cardName")), wanted):
+        return "title"
+    if numbers == "prefixed" and is_promo(card.set_name):
+        return "title"
+    return None
 
 
 def match_level(listing, card):
     """MATCH_EXACT / MATCH_LIKELY if the listing is this card, else None."""
-    ok, from_title = set_matches(listing, card)
-    if not ok or not number_matches(listing, card):
+    numbers = number_match(listing, card)
+    how = set_match(listing, card, numbers)
+    if how is None:
         return None
+    if numbers is None:
+        # Celebrations Classic Collection: TCGdex numbers it CC001-CC025, but
+        # sellers use the original print's number, so match on name instead.
+        if not (how == "name" and card.local_id.upper().startswith("CC") and card.name
+                and has_phrase(normalize_text(listing.get("cardName")), normalize_text(card.name))):
+            return None
+        return MATCH_LIKELY
+    certain = how in ("name", "code") or (how == "promo" and numbers == "prefixed")
     lang = listing_language(listing)
-    if lang is not None and lang != (card.language or "").lower():
-        return None
-    return MATCH_LIKELY if from_title or lang is None else MATCH_EXACT
+    if lang is None:
+        certain = False
+    elif lang != (card.language or "").lower():
+        # A set code in the set name ("s12a VSTAR Universe") outweighs a
+        # language tag that says otherwise.
+        if how != "code":
+            return None
+        certain = False
+    return MATCH_EXACT if certain else MATCH_LIKELY
 
 
 def describe(listing):
     parts = [listing.get("cardName") or ""]
     if listing.get("setName"):
         parts.append(f"({listing['setName']})")
-    if listing.get("gradingCompany") or listing.get("grade"):
-        parts.append(f"[graded {listing.get('gradingCompany') or ''} {listing.get('grade') or ''}]"
-                     .replace("  ", " "))
     return " ".join(p for p in parts if p)
+
+
+def grade(listing):
+    """'PSA 9', 'ACE 10', ... for a graded slab, else None."""
+    parts = [str(listing[k]).strip() for k in ("gradingCompany", "grade") if listing.get(k)]
+    return " ".join(parts) or None
 
 
 class DeckdHQ(Marketplace):
@@ -175,6 +212,7 @@ class DeckdHQ(Marketplace):
                     title=describe(listing),
                     match=level,
                     condition=condition if condition in CONDITIONS else None,
+                    grade=grade(listing),
                     seller=(listing.get("seller") or {}).get("username"),
                 ))
         return offers

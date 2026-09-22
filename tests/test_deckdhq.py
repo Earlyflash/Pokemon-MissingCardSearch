@@ -80,7 +80,7 @@ class MatchingTests(unittest.TestCase):
     def test_japanese_listing_with_its_own_set_name(self):
         [offer] = search(card("M2a", "MEGA Dream ex", "206", "Japanese"))
         self.assertEqual(offer.match, MATCH_EXACT)
-        self.assertIn("graded ACE 9", offer.title)
+        self.assertEqual(offer.grade, "ACE 9")
 
     def test_set_code_prefix_on_set_name(self):
         [offer] = search(card("M2", "Inferno X", "108", "Japanese"))
@@ -105,6 +105,63 @@ class MatchingTests(unittest.TestCase):
     def test_several_cards_in_one_call(self):
         offers = search(card("sv04", "Paradox Rift", "244"), card("sv04", "Paradox Rift", "259"))
         self.assertEqual(sorted(o.card_id for o in offers), ["sv04-244", "sv04-259"])
+
+
+def listing(**kw):
+    """A listing shaped like the API's, for cases the saved pages don't cover.
+    Each one mirrors a real listing reported from the live-site test."""
+    row = {"id": 1, "externalSource": None, "cardName": "", "setName": None, "cardNumber": None,
+           "language": "English", "condition": "NM", "grade": None, "gradingCompany": None,
+           "isBundle": False, "buyerPrice": 1.0, "seller": {"username": "s"}}
+    row.update(kw)
+    return row
+
+
+SVP = ("svp", "SVP Black Star Promos")
+
+
+class LiveSiteMissTests(unittest.TestCase):
+    def level(self, row, c):
+        return deckdhq.match_level(row, c)
+
+    def test_promo_set_under_another_promo_name(self):
+        # id 74: Eevee #173 listed under "Scarlet & Violet Black Star Promos".
+        row = listing(cardName="Eevee", setName="Scarlet & Violet Black Star Promos", cardNumber="173")
+        self.assertEqual(self.level(row, card(*SVP, "173")), MATCH_LIKELY)
+
+    def test_generic_promo_set_with_prefixed_number(self):
+        # id 5654: Rillaboom SWSH277 under plain "Black Star Promo".
+        row = listing(cardName="Rillaboom", setName="Black Star Promo", cardNumber="SWSH277")
+        self.assertEqual(self.level(row, card("swshp", "SWSH Black Star Promos", "SWSH277")),
+                         MATCH_EXACT)
+        self.assertIsNone(self.level(row, card("swshp", "SWSH Black Star Promos", "SWSH278")))
+        self.assertIsNone(self.level(row, card("sv04", "Paradox Rift", "277")))
+
+    def test_ebay_promo_identified_by_number_prefix(self):
+        # id 8971: "Umbreon ex SVP 176 Scarlet & Violet Pokemon Near", no set name.
+        row = listing(cardName="Umbreon ex SVP 176 Scarlet & Violet Pokemon Near",
+                      cardNumber="SVP 176", language=None, externalSource="ebay")
+        self.assertEqual(self.level(row, card(*SVP, "176")), MATCH_LIKELY)
+        self.assertIsNone(self.level(row, card(*SVP, "177")))
+
+    def test_classic_collection_matches_on_name(self):
+        # id 3690: Claydol listed as #15, TCGdex numbers it CC016.
+        row = listing(cardName="Claydol", setName="Celebrations: Classic Collection", cardNumber="15")
+        cc = MissingCard("cel25cc-CC016", "cel25cc", "Celebrations Classic Collection", "CC016",
+                         "Claydol", "English", "en")
+        self.assertEqual(self.level(row, cc), MATCH_LIKELY)
+        other = MissingCard("cel25cc-CC013", "cel25cc", "Celebrations Classic Collection", "CC013",
+                            "Mew ex", "English", "en")
+        self.assertIsNone(self.level(row, other))
+
+    def test_set_code_outweighs_wrong_language_tag(self):
+        # id 5125: Mew 183/172 in "s12a VSTAR Universe", tagged English.
+        row = listing(cardName="Mew", setName="s12a VSTAR Universe", cardNumber="183/172")
+        self.assertEqual(self.level(row, card("S12a", "VSTAR Universe", "183", "Japanese")),
+                         MATCH_LIKELY)
+        # ...but a plain set-name match still needs the language to agree.
+        row = listing(cardName="Tsareena ex", setName="Paradox Rift", cardNumber="46")
+        self.assertIsNone(self.level(row, card("sv04", "Paradox Rift", "046", "Japanese")))
 
 
 if __name__ == "__main__":

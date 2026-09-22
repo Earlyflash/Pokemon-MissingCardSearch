@@ -61,6 +61,7 @@ class Offer:
     title: str = ""            # the listing's own wording, for eyeballing matches
     match: str = MATCH_EXACT   # one of MATCH_LEVELS
     condition: Optional[str] = None  # one of CONDITIONS, or None if unknown
+    grade: Optional[str] = None      # e.g. "PSA 9" for a graded slab; None for a raw card
     seller: Optional[str] = None
     quantity: Optional[int] = None   # copies available, if the site says
 

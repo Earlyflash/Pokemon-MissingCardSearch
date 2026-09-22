@@ -218,6 +218,15 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(ranked[(1, "me01-001")], [])
         self.assertEqual(len(ranked[(2, "me01-001")]), 1)
 
+    def test_raw_copies_rank_ahead_of_graded(self):
+        card = self.groups[1][1][0]
+        raw = Offer("x", card.card_id, "u1", Decimal("5.00"), "GBP")
+        slab = Offer("x", card.card_id, "u2", Decimal("2.00"), "GBP", grade="PSA 9")
+        ranked = self.rank([(1, slab), (1, raw)])[(1, "me01-001")]
+        self.assertEqual([o.url for _, o in ranked], ["u1", "u2"])
+        only_slab = self.rank([(1, slab)])[(1, "me01-001")]
+        self.assertEqual([o.url for _, o in only_slab], ["u2"])
+
     def test_rate_failures_are_reported_not_fatal(self):
         def fetch(src, dst):
             if src == "EUR":

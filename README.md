@@ -119,7 +119,9 @@ python price_search.py --list-marketplaces
 It prints a per-set summary (how many missing cards are for sale, and what
 buying the cheapest of each would cost) and writes the offers to
 `offers.csv`. Prices are the listed item price converted to one currency;
-**shipping isn't counted**.
+**shipping isn't counted**. Graded slabs are listed (with a `Grade` column)
+but ranked after raw copies, so a slab only counts as the cheapest when no
+raw copy is for sale.
 
 | Flag | Meaning |
 |---|---|
@@ -137,7 +139,7 @@ buying the cheapest of each would cost) and writes the offers to
 
 | ID | Marketplace | How it matches |
 |---|---|---|
-| `deckdhq` | [DeckdHQ](https://www.deckdhq.com), UK, GBP | Reads every active Pokémon listing from the site's public API once per run (about 11 requests). Listings with a set name match on set, card number and language (`exact`). eBay imports have no set name, so they match on the set name appearing in the title plus the number (`likely`), as do listings with no language. Prices include DeckdHQ's buyer fee; graded cards are marked in the title. |
+| `deckdhq` | [DeckdHQ](https://www.deckdhq.com), UK, GBP | Reads every active Pokémon listing from the site's public API once per run (about 11 requests). Listings with a set name match on set, card number and language (`exact`). eBay imports have no set name, so they match on the set name appearing in the title plus the number (`likely`), as do listings with no language. Promo listings match across DeckdHQ's various promo set names (exact when the number carries its set prefix, e.g. `SWSH277`, `SVP 176`), and Celebrations Classic Collection cards match on name because sellers use the original print numbers. A set code in the set name (`s12a VSTAR Universe`) outweighs a contradicting language tag. Prices include DeckdHQ's buyer fee. |
 
 ### Adding a marketplace
 
