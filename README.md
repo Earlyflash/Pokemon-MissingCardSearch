@@ -43,11 +43,15 @@ python missing_cards.py --csv earlyflash.csv
 python missing_cards.py --csv earlyflash.csv --set "MEGA Dream ex" --set "Abyss Eye"
 ```
 
+Only sets you already own at least one card from are checked, and by default
+only sets you're **at least 75% of the way through** are listed. The rest are
+named in a one-line summary; change the cut-off with `--min-complete`.
+
 It prints a per-set report and writes every missing card to
 `missing_cards.csv`:
 
 ```
-MEGA Dream ex [M2a, Japanese]: own <owned>/<total>, missing <n>
+MEGA Dream ex [M2a, Japanese]: own <owned>/<total> (<pct>%), missing <n>
   #002      フシギソウ
   ...
 ```
@@ -66,15 +70,18 @@ match, for other tools to consume:
 
 ```json
 {
+  "min_complete": 75,
   "sets": [{
     "set_id": "M2a", "set_name": "MEGA Dream ex", "language": "Japanese",
-    "tcgdex_lang": "ja", "total": 250, "owned": 180,
+    "tcgdex_lang": "ja", "total": 250, "owned": 200, "percent_complete": 80.0,
     "missing": [{
       "card_id": "M2a-002", "set_id": "M2a", "set_name": "MEGA Dream ex",
       "local_id": "002", "name": "フシギソウ", "language": "Japanese",
       "tcgdex_lang": "ja", "rarity": null, "finish": null
     }]
   }],
+  "below_threshold": [{"set_id": "M5", "set_name": "Abyss Eye", "language": "Japanese",
+                       "total": 118, "owned": 40, "percent_complete": 33.9}],
   "unmatched": [{"set_name": "...", "language": "English", "reason": "no TCGdex set found"}]
 }
 ```
@@ -92,6 +99,7 @@ include them, and fetching rarity costs one request per card.
 | `--set NAME` | Only check this RareCandy set (repeatable). Default: every set in the collection. |
 | `--map "NAME=CODE"` | Match a RareCandy set name to a TCGdex set code for this run (repeatable). |
 | `--set-map FILE` | Set name overrides file (default `set_map.json`). |
+| `--min-complete PERCENT` | Only list sets you already own at least this much of (default `75`). `0` lists every set you own a card from. |
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
 
@@ -135,7 +143,8 @@ which usually means the set was matched to the wrong TCGdex set.
   MEGA Dream ex's reverse holo variants) aren't checked separately.
 - TCGdex can lag behind brand-new releases; a set it hasn't indexed yet
   will show as unmatched or incomplete.
-- Only sets that appear in your RareCandy collection are checked.
+- Completion counts distinct card numbers owned against TCGdex's total for
+  the set, secret rares included.
 
 ## Tests
 

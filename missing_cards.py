@@ -245,16 +245,33 @@ def find_missing(owned, set_map):
     return results, unmatched
 
 
-def print_report(results, unmatched):
+def completion(r):
+    """Percentage of the set's cards owned (0-100)."""
+    return 100.0 * r["owned_count"] / r["total"] if r["total"] else 0.0
+
+
+def apply_threshold(results, min_complete):
+    """Split results into (kept, below): only sets at least `min_complete`
+    percent complete are worth hunting the rest of."""
+    kept = [r for r in results if completion(r) >= min_complete]
+    below = [r for r in results if completion(r) < min_complete]
+    return kept, below
+
+
+def print_report(results, unmatched, below=(), min_complete=0):
     print("\n" + "=" * 60)
     for r in results:
         print(f"\n{r['set_name']} [{r['set_id']}, {r['language']}]: own "
-              f"{r['owned_count']}/{r['total']}, missing {len(r['missing'])}")
+              f"{r['owned_count']}/{r['total']} ({completion(r):.0f}%), "
+              f"missing {len(r['missing'])}")
         for c in r["missing"]:
             print(f"  #{c.get('localId', '?'):<8} {c.get('name', '')}")
         if r["unknown_owned"]:
             print(f"  (owned but not in TCGdex's list: {', '.join(r['unknown_owned'])} -- "
                   "numbering mismatch or wrong set match)")
+    if below:
+        shown = ", ".join(f"{r['set_name']} ({completion(r):.0f}%)" for r in below)
+        print(f"\nLeft out {len(below)} set(s) under {min_complete:g}% complete: {shown}")
     if unmatched:
         print("\nCouldn't check these sets -- add them to set_map.json "
               "(or pass --map \"Set Name=CODE\"):")
@@ -274,7 +291,7 @@ def write_csv(results, path):
                             c.get("localId", ""), c.get("name", ""), c.get("id", "")])
 
 
-def write_json(results, unmatched, path):
+def write_json(results, unmatched, path, below=(), min_complete=0):
     """Machine-readable version of the report, grouped by set, for downstream
     tools (e.g. marketplace search). Rarity and finish aren't known here --
     TCGdex's bulk set listing doesn't carry them -- so they're always null."""
@@ -287,6 +304,7 @@ def write_json(results, unmatched, path):
             "tcgdex_lang": r["tcgdex_lang"],
             "total": r["total"],
             "owned": r["owned_count"],
+            "percent_complete": round(completion(r), 1),
             "missing": [{
                 "card_id": c.get("id"),
                 "set_id": r["set_id"],
@@ -300,7 +318,13 @@ def write_json(results, unmatched, path):
             } for c in r["missing"]],
         })
     data = {
+        "min_complete": min_complete,
         "sets": sets,
+        "below_threshold": [{
+            "set_id": r["set_id"], "set_name": r["set_name"], "language": r["language"],
+            "total": r["total"], "owned": r["owned_count"],
+            "percent_complete": round(completion(r), 1),
+        } for r in below],
         "unmatched": [{"set_name": n, "language": lang, "reason": why}
                       for n, lang, why in unmatched],
     }
@@ -327,6 +351,9 @@ def build_arg_parser():
                         "(repeatable), on top of set_map.json.")
     p.add_argument("--set-map", default=DEFAULT_SET_MAP,
                    help="Set name -> TCGdex code overrides file (default: set_map.json).")
+    p.add_argument("--min-complete", type=float, default=75, metavar="PERCENT",
+                   help="Only list sets you already own at least this percentage of "
+                        "(default: %(default)g). 0 lists every set you own a card from.")
     p.add_argument("--out", default="missing_cards.csv",
                    help="CSV to write the missing cards to (default: %(default)s).")
     p.add_argument("--json", metavar="FILE",
@@ -335,7 +362,10 @@ def build_arg_parser():
 
 
 def main(argv=None):
-    args = build_arg_parser().parse_args(argv)
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    if not 0 <= args.min_complete <= 100:
+        parser.error("--min-complete must be between 0 and 100.")
 
     csv_path = args.csv
     if args.profile:
@@ -357,11 +387,12 @@ def main(argv=None):
         set_map.setdefault("cli", {})[name.strip().lower()] = code.strip()
 
     results, unmatched = find_missing(owned, set_map)
-    print_report(results, unmatched)
+    results, below = apply_threshold(results, args.min_complete)
+    print_report(results, unmatched, below, args.min_complete)
     write_csv(results, args.out)
     print(f"Wrote {sum(len(r['missing']) for r in results)} row(s) to {os.path.abspath(args.out)}")
     if args.json:
-        write_json(results, unmatched, args.json)
+        write_json(results, unmatched, args.json, below, args.min_complete)
         print(f"Wrote JSON to {os.path.abspath(args.json)}")
 
 
