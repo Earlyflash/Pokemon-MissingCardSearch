@@ -173,8 +173,8 @@ class MainTests(unittest.TestCase):
         out = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
         try:
             with redirect_stdout(io.StringIO()):
-                missing_cards.main(["--csv", export, "--out", out])
-            with open(out, newline="", encoding="utf-8") as f:
+                missing_cards.main(["--csv", export, "--out", out, "--min-complete", "0"])
+            with open(out, newline="", encoding="utf-8-sig") as f:
                 rows = list(csv.DictReader(f))
         finally:
             os.unlink(export)
@@ -195,8 +195,9 @@ class MainTests(unittest.TestCase):
         try:
             with redirect_stdout(io.StringIO()):
                 missing_cards.main(["--csv", export, "--out", out, "--set", "mega dream ex",
+                                    "--min-complete", "0",
                                     "--set-map", "", "--map", "MEGA Dream ex=M2a"])
-            with open(out, newline="", encoding="utf-8") as f:
+            with open(out, newline="", encoding="utf-8-sig") as f:
                 rows = list(csv.DictReader(f))
         finally:
             os.unlink(export)
@@ -213,7 +214,8 @@ class MainTests(unittest.TestCase):
         out_json = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
         try:
             with redirect_stdout(io.StringIO()):
-                missing_cards.main(["--csv", export, "--out", out, "--json", out_json])
+                missing_cards.main(["--csv", export, "--out", out, "--json", out_json,
+                                    "--min-complete", "0"])
             with open(out_json, encoding="utf-8") as f:
                 data = json.load(f)
         finally:
@@ -230,6 +232,49 @@ class MainTests(unittest.TestCase):
         self.assertEqual(data["unmatched"],
                          [{"set_name": "Mystery", "language": "English",
                            "reason": "no TCGdex set found"}])
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_default_threshold_leaves_out_incomplete_sets(self, _):
+        # Own 2/3 of M2a (67%) and 3/3 would be complete; the default 75%
+        # threshold keeps only sets at or above it.
+        export = write_export([
+            ("A", "MEGA Dream ex", "001", "Japanese", 1),
+            ("B", "MEGA Dream ex", "002", "Japanese", 1),
+            ("C", "Mega Evolution", "001", "English", 1),
+            ("D", "Mega Evolution", "002", "English", 1),
+            ("E", "Mega Evolution", "TG01", "English", 1),
+        ])
+        out = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        out_json = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+        stdout = io.StringIO()
+        try:
+            with redirect_stdout(stdout):
+                missing_cards.main(["--csv", export, "--out", out, "--json", out_json])
+            with open(out_json, encoding="utf-8") as f:
+                import json
+                data = json.load(f)
+        finally:
+            for p in (export, out, out_json):
+                os.unlink(p)
+        self.assertEqual(data["min_complete"], 75)
+        self.assertEqual([s["set_id"] for s in data["sets"]], ["me01"])
+        self.assertEqual(data["sets"][0]["missing"], [])
+        self.assertEqual([(b["set_id"], b["percent_complete"]) for b in data["below_threshold"]],
+                         [("M2a", 66.7)])
+        self.assertIn("Left out 1 set(s) under 75% complete: MEGA Dream ex (67%)",
+                      stdout.getvalue())
+
+    def test_threshold_boundary_is_inclusive(self):
+        results = [{"owned_count": 3, "total": 4}, {"owned_count": 2, "total": 4},
+                   {"owned_count": 0, "total": 0}]
+        kept, below = missing_cards.apply_threshold(results, 75)
+        self.assertEqual(kept, [results[0]])
+        self.assertEqual(below, results[1:])
+
+    def test_threshold_out_of_range_exits(self):
+        with self.assertRaises(SystemExit), redirect_stdout(io.StringIO()), \
+                patch("sys.stderr", io.StringIO()):
+            missing_cards.main(["--csv", "x.csv", "--min-complete", "150"])
 
     def test_bad_map_flag_exits(self):
         export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1)])
