@@ -174,7 +174,7 @@ class MainTests(unittest.TestCase):
         try:
             with redirect_stdout(io.StringIO()):
                 missing_cards.main(["--csv", export, "--out", out, "--min-complete", "0"])
-            with open(out, newline="", encoding="utf-8") as f:
+            with open(out, newline="", encoding="utf-8-sig") as f:
                 rows = list(csv.DictReader(f))
         finally:
             os.unlink(export)
@@ -197,7 +197,7 @@ class MainTests(unittest.TestCase):
                 missing_cards.main(["--csv", export, "--out", out, "--set", "mega dream ex",
                                     "--min-complete", "0",
                                     "--set-map", "", "--map", "MEGA Dream ex=M2a"])
-            with open(out, newline="", encoding="utf-8") as f:
+            with open(out, newline="", encoding="utf-8-sig") as f:
                 rows = list(csv.DictReader(f))
         finally:
             os.unlink(export)

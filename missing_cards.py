@@ -282,7 +282,9 @@ def print_report(results, unmatched, below=(), min_complete=0):
 
 
 def write_csv(results, path):
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    # utf-8-sig (with a BOM) so Excel on Windows reads Japanese card names
+    # correctly instead of showing them as mojibake.
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(OUT_COLUMNS)
         for r in results:
@@ -362,6 +364,10 @@ def build_arg_parser():
 
 
 def main(argv=None):
+    if hasattr(sys.stdout, "reconfigure"):
+        # Same as binder_cover's main(): a legacy Windows console codepage
+        # can't encode Japanese card names, so print '?' instead of crashing.
+        sys.stdout.reconfigure(errors="replace")
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     if not 0 <= args.min_complete <= 100:
