@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api.tcgdex.net)",
+      "WebFetch(domain:tcgdex.net)",
+      "WebFetch(domain:tcgdex.dev)",
+      "WebFetch(domain:www.deckdhq.com)",
+      "WebFetch(domain:deckdhq.com)",
+      "WebFetch(domain:rarecandy.com)",
+      "WebFetch(domain:www.rarecandy.com)",
+      "WebFetch(domain:api.frankfurter.app)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
+  }
+}
