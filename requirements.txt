@@ -1,0 +1,3 @@
+# Needed only because vendor/pokemon-binder-cover-tool/binder_cover.py (whose
+# TCGdex lookup this tool reuses) imports Pillow at load time.
+Pillow>=9.0

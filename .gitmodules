@@ -1,0 +1,6 @@
+[submodule "vendor/pokemon-binder-cover-tool"]
+	path = vendor/pokemon-binder-cover-tool
+	url = https://github.com/Earlyflash/pokemon-binder-cover-tool.git
+[submodule "vendor/RareCandyExporter"]
+	path = vendor/RareCandyExporter
+	url = https://github.com/Earlyflash/RareCandyExporter.git
