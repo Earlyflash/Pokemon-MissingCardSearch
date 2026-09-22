@@ -100,8 +100,9 @@ class Marketplace:
 
 
 class SearchContext:
-    """What the core hands a plugin: its settings, a paced and cached HTTP
-    fetch, and a logger."""
+    """What the core hands a plugin for one run: its settings, a paced and
+    cached HTTP fetch, a logger, and `state` for anything it wants to keep
+    between search calls (e.g. a catalogue it fetched once)."""
 
     def __init__(self, plugin, config=None, cache_dir=None, cache_ttl=6 * 3600,
                  verbose=False, sleep=time.sleep, clock=time.monotonic):
@@ -110,6 +111,7 @@ class SearchContext:
         self.cache_dir = cache_dir
         self.cache_ttl = cache_ttl
         self.verbose = verbose
+        self.state = {}  # scratch space a plugin can keep for the length of one run
         self._min_interval = plugin.min_interval
         self._last_request = None
         self._lock = threading.Lock()
