@@ -288,6 +288,8 @@ class MainTests(unittest.TestCase):
         self.assertIn("3/3 missing card(s) found for sale", out)
         self.assertIn("GBP 46.45", out)
         self.assertIn("keyed: skipped (needs KEYED_SHOP_TOKEN set)", out)
+        # The cheapest listing's link is printed under each card.
+        self.assertIn("https://shop.example/M2a-003", out)
 
     def test_cheapest_only(self):
         rows, _ = self.run_main("--cheapest-only")

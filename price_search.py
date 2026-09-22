@@ -208,6 +208,7 @@ def print_report(groups, ranked, currency, plugin_results, skipped):
                 shown = f"{currency} {price:.2f}" if price is not None else f"{o.currency} {o.price}"
                 graded = f" (graded {o.grade})" if o.grade else ""
                 print(f"  #{c.local_id:<8} {c.name}  {shown} on {o.marketplace}{graded}")
+                print(f"            {o.url}")
         not_found = [c.local_id for c in cards if not best[c.card_id]]
         if not_found:
             print(f"  Not found for sale: {', '.join('#' + n for n in not_found)}")
