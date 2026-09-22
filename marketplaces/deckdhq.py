@@ -86,6 +86,46 @@ def is_promo(set_name):
     return bool({"promo", "promos"} & set(normalize_text(set_name).split()))
 
 
+# Promo series, by the TCGdex promo set id and the phrases that name it in a
+# set name ("Scarlet & Violet Black Star Promos", "Charizard UPC Promo MEP").
+PROMO_SERIES = {
+    "svp": ("svp", "scarlet and violet"),
+    "swshp": ("swsh", "sword and shield"),
+    "mep": ("mep", "mega evolution"),
+    "smp": ("smp", "sun and moon"),
+    "xyp": ("xyp", "xy"),
+    "bwp": ("bwp", "black and white"),
+}
+GENERIC_PROMO_WORDS = {"black", "star", "promo", "promos", "others", "pokemon", "tcg", "card", "cards"}
+
+
+def promo_series(set_name, set_id=None):
+    """The TCGdex promo set a promo set name belongs to; 'generic' for names
+    like "Black Star Promo" that don't say; 'other' for a named series we
+    don't map (Wizards, Nintendo, McDonald's...)."""
+    if set_id and set_id.lower() in PROMO_SERIES:
+        return set_id.lower()
+    text = normalize_text(set_name)
+    for series, phrases in PROMO_SERIES.items():
+        if any(has_phrase(text, p) for p in phrases):
+            return series
+    return "generic" if set(text.split()) <= GENERIC_PROMO_WORDS else "other"
+
+
+def promo_listing_matches(listing, card, numbers):
+    """A promo listing under a different promo set name than the card's:
+    the listing's number must carry the card's set prefix ("SVP 176",
+    "SWSH277"), or the set name must name the card's own series. A number
+    with a denominator ("063/SV-P", "021/034") belongs to a Japanese promo or
+    a sub-set, never to an English promo set."""
+    if "/" in str(listing.get("cardNumber") or ""):
+        return False
+    if numbers == "prefixed":
+        return True
+    series = promo_series(listing.get("setName"))
+    return series not in ("generic", "other") and series == promo_series(card.set_name, card.set_id)
+
+
 def listing_numbers(listing):
     if listing.get("cardNumber"):
         return {normalize_number(listing["cardNumber"])}
@@ -122,12 +162,12 @@ def set_match(listing, card, numbers):
             return "code"
         if len(words) > 1 and " ".join(words[1:]) == wanted:
             return "name"
-        if is_promo(set_name) and is_promo(card.set_name):
+        if is_promo(set_name) and is_promo(card.set_name) and promo_listing_matches(listing, card, numbers):
             return "promo"
         return None
     if has_phrase(normalize_text(listing.get("cardName")), wanted):
         return "title"
-    if numbers == "prefixed" and is_promo(card.set_name):
+    if numbers == "prefixed" and is_promo(card.set_name) and promo_listing_matches(listing, card, numbers):
         return "title"
     return None
 
@@ -145,7 +185,7 @@ def match_level(listing, card):
                 and has_phrase(normalize_text(listing.get("cardName")), normalize_text(card.name))):
             return None
         return MATCH_LIKELY
-    certain = how in ("name", "code") or (how == "promo" and numbers == "prefixed")
+    certain = how in ("name", "code", "promo")
     lang = listing_language(listing)
     if lang is None:
         certain = False

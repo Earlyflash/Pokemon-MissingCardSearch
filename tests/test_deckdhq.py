@@ -127,7 +127,37 @@ class LiveSiteMissTests(unittest.TestCase):
     def test_promo_set_under_another_promo_name(self):
         # id 74: Eevee #173 listed under "Scarlet & Violet Black Star Promos".
         row = listing(cardName="Eevee", setName="Scarlet & Violet Black Star Promos", cardNumber="173")
-        self.assertEqual(self.level(row, card(*SVP, "173")), MATCH_LIKELY)
+        self.assertEqual(self.level(row, card(*SVP, "173")), MATCH_EXACT)
+        # id 4434: the same series name must not match Mega Evolution promos.
+        self.assertIsNone(self.level(row, card("mep", "MEP Black Star Promos", "173")))
+
+    def test_promo_set_naming_another_series_does_not_match(self):
+        # id 8578: N's Zekrom #31 under "Mega Evolution Black Star Promos".
+        row = listing(cardName="N's Zekrom", setName="Mega Evolution Black Star Promos", cardNumber="31")
+        self.assertIsNone(self.level(row, card(*SVP, "031")))
+        self.assertEqual(self.level(row, card("mep", "MEP Black Star Promos", "031")), MATCH_EXACT)
+
+    def test_bare_number_under_generic_or_unmapped_promo_name_does_not_match(self):
+        # id 8753 Pikachu ("Promo", #4); id 8754 Dragonite ("Wizards Black Star Promos", #5);
+        # id 8284 Celebi ("Nintendo Black Star Promos", #29).
+        for set_name, number in [("Promo", "4"), ("Wizards Black Star Promos", "5"),
+                                 ("Nintendo Black Star Promos", "29"), ("Black Star Promo", "4")]:
+            row = listing(cardName="x", setName=set_name, cardNumber=number)
+            self.assertIsNone(self.level(row, card(*SVP, number.zfill(3))), set_name)
+
+    def test_japanese_promo_and_subset_numbers_do_not_match(self):
+        # id 6129 Vaporeon ("Yu Nagaba Promo", "063/SV-P"); id 4794 Latios
+        # ("McDonald's Promo", "007/ADV-P"); id 5510 Poke Ball ("Black Star Promos / Others", "021/034").
+        for set_name, number in [("Yu Nagaba Promo", "063/SV-P"), ("McDonald's Promo", "007/ADV-P"),
+                                 ("Black Star Promos / Others", "021/034"),
+                                 ("Scarlet & Violet Black Star Promos", "063/SV-P")]:
+            row = listing(cardName="x", setName=set_name, cardNumber=number)
+            self.assertIsNone(self.level(row, card(*SVP, number[:3])), set_name)
+
+    def test_named_upc_promo_with_set_prefix(self):
+        # id 8235: "Charizard UPC Promo MEP", "MEP 023".
+        row = listing(cardName="Charizard ex", setName="Charizard UPC Promo MEP", cardNumber="MEP 023")
+        self.assertEqual(self.level(row, card("mep", "MEP Black Star Promos", "023")), MATCH_EXACT)
 
     def test_generic_promo_set_with_prefixed_number(self):
         # id 5654: Rillaboom SWSH277 under plain "Black Star Promo".
