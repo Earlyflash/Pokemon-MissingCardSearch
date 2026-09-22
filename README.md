@@ -119,9 +119,9 @@ python price_search.py --list-marketplaces
 It prints a per-set summary (how many missing cards are for sale, and what
 buying the cheapest of each would cost) and writes the offers to
 `offers.csv`. Prices are the listed item price converted to one currency;
-**shipping isn't counted**. Graded slabs are listed (with a `Grade` column)
-but ranked after raw copies, so a slab only counts as the cheapest when no
-raw copy is for sale.
+**shipping isn't counted**. Graded slabs are included and compete on price
+like any other copy; they're labelled with their grading company and grade
+(e.g. `PSA 9`) in the `Grade` column and in the printed summary.
 
 | Flag | Meaning |
 |---|---|

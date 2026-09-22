@@ -141,8 +141,7 @@ def converted(offer, rates):
 
 def rank_offers(groups, offers, rates, include_uncertain=False):
     """{(set index, card_id): [(converted price or None, Offer), ...]}
-    cheapest first, raw cards ahead of graded slabs (a slab is only the
-    cheapest when no raw copy is for sale); offers with no converted price
+    cheapest first, graded slabs included; offers with no converted price
     go last."""
     ranked = {(gi, c.card_id): [] for gi, (_, cards) in enumerate(groups) for c in cards}
     for gi, o in offers:
@@ -150,7 +149,7 @@ def rank_offers(groups, offers, rates, include_uncertain=False):
             continue
         ranked[(gi, o.card_id)].append((converted(o, rates), o))
     for lst in ranked.values():
-        lst.sort(key=lambda po: (po[1].grade is not None, po[0] is None, po[0] or 0))
+        lst.sort(key=lambda po: (po[0] is None, po[0] or 0))
     return ranked
 
 
