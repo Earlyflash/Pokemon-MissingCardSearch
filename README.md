@@ -133,6 +133,12 @@ buying the cheapest of each would cost) and writes the offers to
 | `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached for 6 hours in `.price_cache/`. |
 | `-v` | Print every request made. |
 
+### Marketplaces
+
+| ID | Marketplace | How it matches |
+|---|---|---|
+| `deckdhq` | [DeckdHQ](https://www.deckdhq.com), UK, GBP | Reads every active Pokémon listing from the site's public API once per run (about 11 requests). Listings with a set name match on set, card number and language (`exact`). eBay imports have no set name, so they match on the set name appearing in the title plus the number (`likely`), as do listings with no language. Prices include DeckdHQ's buyer fee; graded cards are marked in the title. |
+
 ### Adding a marketplace
 
 Each marketplace is one file in `marketplaces/`. Subclass `Marketplace` from
