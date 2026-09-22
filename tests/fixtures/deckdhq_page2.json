@@ -1,0 +1,152 @@
+{
+ "data": [
+  {
+   "id": 6593,
+   "externalSource": null,
+   "cardName": "Steelix IR ACE 9",
+   "setName": "Paradox Rift",
+   "cardNumber": "208",
+   "language": "English",
+   "condition": null,
+   "grade": "9",
+   "gradingCompany": "ACE",
+   "isBundle": false,
+   "price": "31.99",
+   "buyerPrice": 33.63,
+   "buyerShippingPrice": 4.49,
+   "seller": {
+    "username": "LewJonesssTCG"
+   }
+  },
+  {
+   "id": 6591,
+   "externalSource": null,
+   "cardName": "Bulbasaur Mega Brave KOREAN AR ACE 10",
+   "setName": "Mega Brave",
+   "cardNumber": "64",
+   "language": "Japanese",
+   "condition": null,
+   "grade": "10",
+   "gradingCompany": "ACE",
+   "isBundle": false,
+   "price": "27.99",
+   "buyerPrice": 29.45,
+   "buyerShippingPrice": 4.49,
+   "seller": {
+    "username": "LewJonesssTCG"
+   }
+  },
+  {
+   "id": 6589,
+   "externalSource": null,
+   "cardName": "Team Rocket's Dugtrio Mega DREAM ex ACE 9",
+   "setName": "Mega DREAM ex",
+   "cardNumber": "206",
+   "language": "Japanese",
+   "condition": null,
+   "grade": "9",
+   "gradingCompany": "ACE",
+   "isBundle": false,
+   "price": "14.99",
+   "buyerPrice": 15.86,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "LewJonesssTCG"
+   }
+  },
+  {
+   "id": 6253,
+   "externalSource": "shopify",
+   "cardName": "Yveltal",
+   "setName": "Paradox Rift",
+   "cardNumber": "205",
+   "language": "English",
+   "condition": null,
+   "grade": "10",
+   "gradingCompany": "PSA",
+   "isBundle": false,
+   "price": "138.56",
+   "buyerPrice": 145,
+   "buyerShippingPrice": 8.75,
+   "seller": {
+    "username": "TJs_Cards"
+   }
+  },
+  {
+   "id": 6093,
+   "externalSource": "shopify",
+   "cardName": "Tulip",
+   "setName": "Paradox Rift",
+   "cardNumber": "259",
+   "language": "English",
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "8.9",
+   "buyerPrice": 9.5,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "TJs_Cards"
+   }
+  },
+  {
+   "id": 6092,
+   "externalSource": "shopify",
+   "cardName": "Tulip",
+   "setName": "Paradox Rift",
+   "cardNumber": "244",
+   "language": "English",
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "4.58",
+   "buyerPrice": 4.99,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "TJs_Cards"
+   }
+  },
+  {
+   "id": 6091,
+   "externalSource": "shopify",
+   "cardName": "Tsareena ex",
+   "setName": "Paradox Rift",
+   "cardNumber": "46",
+   "language": "English",
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "1.53",
+   "buyerPrice": 1.8,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "TJs_Cards"
+   }
+  },
+  {
+   "id": 6068,
+   "externalSource": "shopify",
+   "cardName": "Toxtricity ex",
+   "setName": "Paradox Rift",
+   "cardNumber": "100",
+   "language": "English",
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "1.53",
+   "buyerPrice": 1.8,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "TJs_Cards"
+   }
+  }
+ ],
+ "total": 16,
+ "page": 2,
+ "limit": 8,
+ "totalPages": 2
+}

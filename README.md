@@ -103,6 +103,82 @@ include them, and fetching rarity costs one request per card.
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
 
+## Pricing the missing cards
+
+`price_search.py` takes the `--json` file above and asks each marketplace
+plugin which of those cards are for sale, then lists every offer found,
+cheapest first per card, in GBP:
+
+```bash
+python missing_cards.py --csv earlyflash.csv --json missing.json
+python price_search.py missing.json
+python price_search.py missing.json --marketplace deckdhq --cheapest-only
+python price_search.py --list-marketplaces
+```
+
+It prints a per-set summary (how many missing cards are for sale, and what
+buying the cheapest of each would cost) and writes the offers to
+`offers.csv`. Prices are the listed item price converted to one currency;
+**shipping isn't counted**. Graded slabs are included and compete on price
+like any other copy; they're labelled with their grading company and grade
+(e.g. `PSA 9`) in the `Grade` column and in the printed summary.
+
+| Flag | Meaning |
+|---|---|
+| `--marketplace ID` | Only search this marketplace (repeatable). Default: every marketplace whose settings are present. |
+| `--list-marketplaces` | List the installed marketplace plugins and whether they're ready. |
+| `--set NAME` | Only search this set, by name or TCGdex set id (repeatable). |
+| `--currency CODE` | Currency to compare in (default `GBP`), converted with the same free rate service RareCandyExporter uses. |
+| `--out FILE` | Where to write the offers (default `offers.csv`). |
+| `--cheapest-only` | Write only the cheapest offer per card. |
+| `--include-uncertain` | Also count offers a marketplace isn't sure are the right print. |
+| `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached for 6 hours in `.price_cache/`. |
+| `-v` | Print every request made. |
+
+### Marketplaces
+
+| ID | Marketplace | How it matches |
+|---|---|---|
+| `deckdhq` | [DeckdHQ](https://www.deckdhq.com), UK, GBP | Reads every active Pokémon listing from the site's public API once per run (about 11 requests). Listings with a set name match on set, card number and language (`exact`). eBay imports have no set name, so they match on the set name appearing in the title plus the number (`likely`), as do listings with no language. Promo listings match across DeckdHQ's various promo set names only when the number carries the card's set prefix (`SWSH277`, `SVP 176`) or the set name names the same promo series (e.g. "Scarlet & Violet Black Star Promos" for SVP); numbers like `063/SV-P` are Japanese promos and never match English promo sets, and Celebrations Classic Collection cards match on name because sellers use the original print numbers. A set code in the set name (`s12a VSTAR Universe`) outweighs a contradicting language tag. Prices include DeckdHQ's buyer fee. |
+
+### Adding a marketplace
+
+Each marketplace is one file in `marketplaces/`. Subclass `Marketplace` from
+`marketplaces/base.py`, implement `search()` (one card) or `search_set()`
+(a whole set at once, for sites that are cheaper to read that way), and end
+the module with `PLUGIN = YourMarketplace()`. It's picked up automatically.
+
+```python
+from decimal import Decimal
+from marketplaces.base import Marketplace, Offer, MATCH_EXACT
+
+class ExampleShop(Marketplace):
+    id = "exampleshop"             # used with --marketplace
+    name = "Example Shop"
+    languages = {"en", "ja"}       # TCGdex language codes it sells; None = all
+    needs = ("EXAMPLE_API_KEY",)   # environment variables it requires
+    min_interval = 1.0             # seconds between its requests
+
+    def search(self, card, ctx):
+        data = ctx.fetch(f"https://api.example/search?set={card.set_id}&no={card.local_id}",
+                         headers={"Authorization": ctx.config["EXAMPLE_API_KEY"]}, as_json=True)
+        return [Offer(marketplace=self.id, card_id=card.card_id, url=hit["url"],
+                      price=Decimal(hit["price"]), currency=hit["currency"],
+                      title=hit["title"], condition="NM", match=MATCH_EXACT)
+                for hit in data["results"]]
+
+PLUGIN = ExampleShop()
+```
+
+A plugin only has to know its own site. The core handles the rest: it sends
+each plugin only the cards in languages it sells, runs marketplaces in
+parallel while spacing each one's own requests, caches responses, converts
+currencies, and carries on if one marketplace fails. How a plugin reads its
+site is up to it (an API, web pages, a browser, or a file exported by hand).
+Each offer says how sure the match is: `exact` (matched on set and card
+number), `likely`, or `uncertain` (might be a different print; left out of
+the cheapest unless `--include-uncertain`).
+
 ## How it works
 
 1. Every card in the export is grouped by **set name + print language**, so
