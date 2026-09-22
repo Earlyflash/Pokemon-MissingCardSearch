@@ -107,6 +107,33 @@ class LoadMissingTests(unittest.TestCase):
                           price_search.load_missing(self.path, ["mega dream ex"])], ["M2a"])
 
 
+class LoadMissingCsvTests(unittest.TestCase):
+    def write_csv(self, text):
+        f = tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8-sig",
+                                        newline="")
+        f.write(text)
+        f.close()
+        return f.name
+
+    def test_missing_cards_csv_loads_like_the_json(self):
+        path = self.write_csv(
+            "Set Name,TCGdex Set,Language,Card Number,Card Name,TCGdex Card ID\r\n"
+            "MEGA Dream ex,M2a,Japanese,002,フシギソウ,M2a-002\r\n"
+            "MEGA Dream ex,M2a,Japanese,003,メガフシギバナex,M2a-003\r\n"
+            "Mega Evolution,me01,English,001,Bulbasaur,me01-001\r\n")
+        from_csv = price_search.load_missing(path)
+        from_json = price_search.load_missing(write_json(MISSING))
+        self.assertEqual([cards for _, cards in from_csv], [cards for _, cards in from_json])
+        self.assertEqual([(s["set_id"], s["language"]) for s, _ in from_csv],
+                         [("M2a", "Japanese"), ("me01", "English")])
+
+    def test_other_csv_gives_a_clear_error(self):
+        path = self.write_csv("Product Name,Set Name\r\nPikachu,Base Set\r\n")
+        with self.assertRaises(SystemExit) as e:
+            price_search.load_missing(path)
+        self.assertIn("missing_cards.csv", str(e.exception))
+
+
 class SelectPluginsTests(unittest.TestCase):
     available = {"jpshop": JapanShop(), "keyed": KeyedShop()}
 

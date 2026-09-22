@@ -105,13 +105,14 @@ include them, and fetching rarity costs one request per card.
 
 ## Pricing the missing cards
 
-`price_search.py` takes the `--json` file above and asks each marketplace
-plugin which of those cards are for sale, then lists every offer found,
-cheapest first per card, in GBP:
+`price_search.py` takes `missing_cards.csv` (or the `--json` file above) and
+asks each marketplace plugin which of those cards are for sale, then lists
+every offer found, cheapest first per card, in GBP:
 
 ```bash
-python missing_cards.py --csv earlyflash.csv --json missing.json
-python price_search.py missing.json
+python missing_cards.py --csv earlyflash.csv
+python price_search.py missing_cards.csv
+python price_search.py missing.json            # the --json file works too
 python price_search.py missing.json --marketplace deckdhq --cheapest-only
 python price_search.py --list-marketplaces
 ```

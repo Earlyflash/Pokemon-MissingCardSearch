@@ -2,7 +2,8 @@
 """
 Pokémon TCG Missing Card Price Search
 -------------------------------------
-Takes the missing cards written by `missing_cards.py --json FILE` and asks
+Takes the missing cards written by missing_cards.py (its missing_cards.csv,
+or the file from its --json flag) and asks
 each marketplace plugin (in marketplaces/) which of them are for sale and at
 what price, then lists every offer found, cheapest first per card, in one
 currency.
@@ -11,7 +12,7 @@ Shipping isn't counted: prices are the listed item price only.
 
 Usage examples:
 
-  python price_search.py missing.json
+  python price_search.py missing_cards.csv
   python price_search.py missing.json --marketplace deckdhq --cheapest-only
   python price_search.py --list-marketplaces
 
@@ -38,10 +39,44 @@ PENNY = Decimal("0.01")
 
 # ------------------------------------------------------------------ input --
 
+# missing_cards.py's print languages -> TCGdex dataset, for reading its CSV
+# (the JSON carries tcgdex_lang itself). Other languages use the English list.
+CSV_LANGUAGE_TO_TCGDEX = {"english": "en", "japanese": "ja", "chinese": "zh-tw", "korean": "ko"}
+
+
+def read_missing_csv(f):
+    """The same {"sets": [...]} shape as the JSON, rebuilt from missing_cards.csv."""
+    sets = {}
+    for row in csv.DictReader(f):
+        set_name, set_id, language = row["Set Name"], row["TCGdex Set"], row["Language"]
+        entry = sets.setdefault((set_name, set_id, language), {
+            "set_id": set_id, "set_name": set_name, "language": language,
+            "tcgdex_lang": CSV_LANGUAGE_TO_TCGDEX.get(language.strip().lower(), "en"),
+            "missing": [],
+        })
+        entry["missing"].append({
+            "card_id": row["TCGdex Card ID"], "set_id": set_id, "set_name": set_name,
+            "local_id": row["Card Number"], "name": row["Card Name"],
+            "language": language, "tcgdex_lang": entry["tcgdex_lang"],
+        })
+    return {"sets": list(sets.values())}
+
+
 def load_missing(path, only_sets=()):
-    """[(set_entry, [MissingCard, ...]), ...] from missing_cards.py's JSON."""
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
+    """[(set_entry, [MissingCard, ...]), ...] from missing_cards.py's --json
+    file or its missing_cards.csv, whichever `path` is."""
+    # utf-8-sig: missing_cards.csv starts with a BOM so Excel reads it right.
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        head = f.read(1)
+        f.seek(0)
+        if head in ("{", "["):
+            data = json.load(f)
+        else:
+            try:
+                data = read_missing_csv(f)
+            except KeyError as e:
+                sys.exit(f"{path} isn't missing_cards.py output: no {e} column. Give it "
+                         "missing_cards.csv or the file written by `missing_cards.py --json FILE`.")
     wanted = {s.lower() for s in only_sets}
     groups = []
     for s in data.get("sets", []):
@@ -190,7 +225,8 @@ def write_csv(groups, ranked, currency, path, cheapest_only=False):
             "Marketplace", f"Price ({currency})", "Listed Price", "Listed Currency", "Condition",
             "Grade", "Seller", "Quantity", "Match", "Listing Title", "URL"]
     rows = 0
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    # utf-8-sig (with a BOM) so Excel on Windows reads Japanese card names.
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(cols)
         for gi, (set_entry, cards) in enumerate(groups):
@@ -224,7 +260,8 @@ def list_marketplaces(available, environ=os.environ):
 def build_arg_parser():
     p = argparse.ArgumentParser(
         description="Search marketplaces for the cards listed by missing_cards.py --json.")
-    p.add_argument("missing_json", nargs="?", help="JSON written by missing_cards.py --json.")
+    p.add_argument("missing_json", nargs="?", metavar="MISSING_FILE",
+                   help="missing_cards.csv, or the JSON written by missing_cards.py --json.")
     p.add_argument("--marketplace", dest="marketplaces", action="append", default=[], metavar="ID",
                    help="Only search this marketplace (repeatable). Default: every marketplace "
                         "whose settings are present.")
@@ -248,13 +285,17 @@ def build_arg_parser():
 
 
 def main(argv=None):
+    if hasattr(sys.stdout, "reconfigure"):
+        # Same as missing_cards.py: a legacy Windows console codepage can't
+        # encode Japanese card names, so print '?' instead of crashing.
+        sys.stdout.reconfigure(errors="replace")
     args = build_arg_parser().parse_args(argv)
     available = marketplaces.discover()
     if args.list_marketplaces:
         list_marketplaces(available)
         return
     if not args.missing_json:
-        sys.exit("Give the JSON file written by `missing_cards.py --json FILE`.")
+        sys.exit("Give missing_cards.csv, or the file written by `missing_cards.py --json FILE`.")
 
     currency = args.currency.upper()
     groups = load_missing(args.missing_json, args.sets)
