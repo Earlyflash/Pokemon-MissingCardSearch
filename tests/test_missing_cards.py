@@ -151,13 +151,23 @@ class FindMissingTests(unittest.TestCase):
         self.assertEqual(unmatched, [("Nonexistent Set", "English", "no TCGdex set found")])
 
     @patch("binder_cover._fetch_json", side_effect=fake_fetch)
-    def test_falls_back_to_other_language_card_list_with_warning(self, _):
+    def test_never_uses_another_languages_card_list(self, _):
+        # Japanese prints of a set TCGdex only has an English list for must not
+        # be diffed against the English list: numbering differs between them.
         owned = {("Mega Evolution", "Japanese"): {"1"}}
-        out = io.StringIO()
-        with redirect_stdout(out):
+        with redirect_stdout(io.StringIO()):
+            results, unmatched = missing_cards.find_missing(owned, {})
+        self.assertEqual(results, [])
+        self.assertEqual(unmatched, [(
+            "Mega Evolution", "Japanese",
+            "matched TCGdex set 'me01', but TCGdex has no Japanese card list for it")])
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_other_western_languages_use_english_list(self, _):
+        owned = {("Mega Evolution", "German"): {"1"}}
+        with redirect_stdout(io.StringIO()):
             results, _ = missing_cards.find_missing(owned, {})
         self.assertEqual(results[0]["tcgdex_lang"], "en")
-        self.assertIn("isn't in TCGdex's Japanese data", out.getvalue())
 
 
 class MainTests(unittest.TestCase):
