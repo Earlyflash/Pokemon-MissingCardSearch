@@ -53,12 +53,16 @@ except ImportError:
         sys.modules[f"PIL.{_sub}"] = getattr(_pil, _sub)
     sys.modules["PIL"] = _pil
 import binder_cover  # noqa: E402  (path set up just above)
-from binder_cover import TCGDEX_BASE, TCGDEX_LANGS, TCGDEX_FIELD_PRIORITY  # noqa: E402
+from binder_cover import TCGDEX_BASE, TCGDEX_LANGS  # noqa: E402
 
 # RareCandyExporter writes a full language name per card (detected from the
-# card's scrydex image URL). These are the TCGdex datasets to try, in order,
-# for each. Languages TCGdex's five binder-tool datasets don't cover (German,
-# French, ...) share the English print run's card list, so they use "en".
+# card's scrydex image URL). These are the only TCGdex datasets whose card list
+# is used for each: Japanese, Chinese and Korean sets are numbered differently
+# from each other and from English ones, so another dataset's list would
+# report the wrong cards as missing (e.g. zh-tw's S10b list stops at #71, so
+# a Japanese S10b #079 looked unowned). Languages TCGdex's five binder-tool datasets
+# don't cover (German, French, ...) share the English print run's card list,
+# so they use "en".
 LANGUAGE_TO_TCGDEX = {
     "english": ("en",),
     "japanese": ("ja",),
@@ -186,14 +190,13 @@ def resolve_set_id(set_name, language, set_map):
 
 
 def tcgdex_langs_for(language):
-    preferred = LANGUAGE_TO_TCGDEX.get(language.lower(), ("en",))
-    return list(preferred) + [lang for lang in TCGDEX_FIELD_PRIORITY if lang not in preferred]
+    return LANGUAGE_TO_TCGDEX.get(language.lower(), ("en",))
 
 
 def fetch_card_list(set_id, language):
     """The set's full card list from the TCGdex dataset matching the cards'
-    print language, falling back to the other datasets. Returns
-    (cards, tcgdex_lang_used, set_detail) or (None, None, None)."""
+    print language (never another language's -- see LANGUAGE_TO_TCGDEX).
+    Returns (cards, tcgdex_lang_used, set_detail) or (None, None, None)."""
     for lang in tcgdex_langs_for(language):
         detail = binder_cover._fetch_json(f"{TCGDEX_BASE}/{lang}/sets/{set_id}")
         if detail and detail.get("cards"):
@@ -225,12 +228,10 @@ def find_missing(owned, set_map):
             continue
         cards, lang_used, _ = fetch_card_list(set_id, language)
         if not cards:
-            unmatched.append((set_name, language, f"TCGdex set '{set_id}' has no card list"))
+            unmatched.append((set_name, language,
+                              f"matched TCGdex set '{set_id}', but TCGdex has no {language} "
+                              "card list for it"))
             continue
-        if lang_used not in LANGUAGE_TO_TCGDEX.get(language.lower(), ("en",)):
-            print(f"[warning] '{set_id}' isn't in TCGdex's {language} data, so its "
-                  f"{lang_used} card list is being used instead. If that's the wrong set, "
-                  "add a mapping for it to set_map.json.")
 
         listed = {normalize_number(c.get("localId")): c for c in cards}
         missing = sorted((c for n, c in listed.items() if n not in numbers),

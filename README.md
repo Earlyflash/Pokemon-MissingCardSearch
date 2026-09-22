@@ -188,8 +188,10 @@ the cheapest unless `--include-uncertain`).
    then an exact name match across TCGdex's Japanese, English, Chinese and
    Korean datasets, then the binder cover tool's code/name search.
 3. The set's card list is fetched from the TCGdex dataset for that print
-   language (English for languages TCGdex's datasets here don't cover, such
-   as German or French).
+   language only (English for languages TCGdex's datasets here don't cover,
+   such as German or French). Japanese, Chinese and Korean sets are numbered
+   differently, so if TCGdex has no list in the right language the set is
+   reported as unmatched rather than checked against the wrong list.
 4. Card numbers are compared with leading zeros and `/total` suffixes
    ignored, so RareCandy's `76` matches TCGdex's `076`.
 
