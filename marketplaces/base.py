@@ -77,6 +77,11 @@ class Marketplace:
     languages = None           # TCGdex language codes it sells, e.g. {"en", "ja"}; None = all
     needs = ()                 # environment variables it requires, e.g. ("EBAY_APP_ID",)
     min_interval = 1.0         # minimum seconds between this plugin's HTTP requests
+    # True for a site that only publishes a price per card (e.g. its cheapest
+    # copy in any language or condition) rather than individual listings. The
+    # core reports those prices separately and never ranks them against real
+    # listings.
+    price_guide = False
 
     def search(self, card, ctx):
         """Return a list of Offers for one MissingCard."""

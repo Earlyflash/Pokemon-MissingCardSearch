@@ -105,13 +105,14 @@ include them, and fetching rarity costs one request per card.
 
 ## Pricing the missing cards
 
-`price_search.py` takes the `--json` file above and asks each marketplace
-plugin which of those cards are for sale, then lists every offer found,
-cheapest first per card, in GBP:
+`price_search.py` takes `missing_cards.csv` (or the `--json` file above) and
+asks each marketplace plugin which of those cards are for sale, then lists
+every offer found, cheapest first per card, in GBP:
 
 ```bash
-python missing_cards.py --csv earlyflash.csv --json missing.json
-python price_search.py missing.json
+python missing_cards.py --csv earlyflash.csv
+python price_search.py missing_cards.csv
+python price_search.py missing.json            # the --json file works too
 python price_search.py missing.json --marketplace deckdhq --cheapest-only
 python price_search.py --list-marketplaces
 ```
@@ -123,6 +124,12 @@ buying the cheapest of each would cost) and writes the offers to
 like any other copy; they're labelled with their grading company and grade
 (e.g. `PSA 9`) in the `Grade` column and in the printed summary.
 
+Some marketplaces only publish a price guide (one "from" price per card, the
+cheapest copy in any language or condition) rather than listings. Those
+prices are printed in their own section after the offers, are never ranked
+against real listings or counted in the totals, and go to their own CSV,
+`price_guide.csv` (same columns as `offers.csv`).
+
 | Flag | Meaning |
 |---|---|
 | `--marketplace ID` | Only search this marketplace (repeatable). Default: every marketplace whose settings are present. |
@@ -130,6 +137,7 @@ like any other copy; they're labelled with their grading company and grade
 | `--set NAME` | Only search this set, by name or TCGdex set id (repeatable). |
 | `--currency CODE` | Currency to compare in (default `GBP`), converted with the same free rate service RareCandyExporter uses. |
 | `--out FILE` | Where to write the offers (default `offers.csv`). |
+| `--guide-out FILE` | Where to write price-guide prices, e.g. Cardmarket's (default `price_guide.csv`). |
 | `--cheapest-only` | Write only the cheapest offer per card. |
 | `--include-uncertain` | Also count offers a marketplace isn't sure are the right print. |
 | `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached for 6 hours in `.price_cache/`. |
@@ -140,6 +148,7 @@ like any other copy; they're labelled with their grading company and grade
 | ID | Marketplace | How it matches |
 |---|---|---|
 | `deckdhq` | [DeckdHQ](https://www.deckdhq.com), UK, GBP | Reads every active Pokémon listing from the site's public API once per run (about 11 requests). Listings with a set name match on set, card number and language (`exact`). eBay imports have no set name, so they match on the set name appearing in the title plus the number (`likely`), as do listings with no language. Promo listings match across DeckdHQ's various promo set names only when the number carries the card's set prefix (`SWSH277`, `SVP 176`) or the set name names the same promo series (e.g. "Scarlet & Violet Black Star Promos" for SVP); numbers like `063/SV-P` are Japanese promos and never match English promo sets, and Celebrations Classic Collection cards match on name because sellers use the original print numbers. A set code in the set name (`s12a VSTAR Universe`) outweighs a contradicting language tag. Prices include DeckdHQ's buyer fee. |
+| `cardmarket` | [Cardmarket](https://www.cardmarket.com), EU, EUR. **Price guide, not listings.** | Cardmarket's site blocks automated reads and its API takes no new users, so this reads the price guide Cardmarket publishes as a free daily download (one ~15 MB file per run). The price is its `low`: the cheapest copy currently listed, in any language or condition and from any seller country, so an English near-mint copy shipped to the UK may cost more. Cards are tied to Cardmarket products through TCGdex, whose card records carry the Cardmarket product id (one TCGdex request per missing card), and link to the card's Cardmarket page. |
 
 ### Adding a marketplace
 
@@ -147,6 +156,8 @@ Each marketplace is one file in `marketplaces/`. Subclass `Marketplace` from
 `marketplaces/base.py`, implement `search()` (one card) or `search_set()`
 (a whole set at once, for sites that are cheaper to read that way), and end
 the module with `PLUGIN = YourMarketplace()`. It's picked up automatically.
+Set `price_guide = True` on a site that only publishes a price per card
+rather than listings, and its prices are reported separately.
 
 ```python
 from decimal import Decimal
