@@ -1,0 +1,152 @@
+{
+ "data": [
+  {
+   "id": 8974,
+   "externalSource": "ebay",
+   "cardName": "Alcremie VMAX Rainbow Shining Fates Pokemon Near",
+   "setName": null,
+   "cardNumber": "073/072",
+   "language": null,
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "5.06",
+   "buyerPrice": 5.49,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "ThomsonCardLabs"
+   }
+  },
+  {
+   "id": 8965,
+   "externalSource": "ebay",
+   "cardName": "Galarian Cursola SV050/SV122 Shining Fates Shiny Vault Pokemon NM",
+   "setName": null,
+   "cardNumber": "SV050/SV122",
+   "language": null,
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "3.8",
+   "buyerPrice": 4.17,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "ThomsonCardLabs"
+   }
+  },
+  {
+   "id": 8952,
+   "externalSource": "ebay",
+   "cardName": "Lugia Break Double Awakening Psychic King Pokemon KOR NM",
+   "setName": null,
+   "cardNumber": "059/078",
+   "language": null,
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "19.41",
+   "buyerPrice": 20.48,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "ThomsonCardLabs"
+   }
+  },
+  {
+   "id": 8709,
+   "externalSource": "ebay",
+   "cardName": "Ambipom AR Inferno X Pokemon NM",
+   "setName": null,
+   "cardNumber": "092/080",
+   "language": null,
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "1.71",
+   "buyerPrice": 1.99,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "ThomsonCardLabs"
+   }
+  },
+  {
+   "id": 8706,
+   "externalSource": "ebay",
+   "cardName": "Hop's Trevenant AR MEGA Dream ex Pokemon NM",
+   "setName": null,
+   "cardNumber": "204/193",
+   "language": null,
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "1.71",
+   "buyerPrice": 1.99,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "ThomsonCardLabs"
+   }
+  },
+  {
+   "id": 6621,
+   "externalSource": "shopify",
+   "cardName": "Battle Colosseum",
+   "setName": "m2 Inferno X",
+   "cardNumber": "108/080",
+   "language": null,
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "1.71",
+   "buyerPrice": 1.99,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "TJs_Cards"
+   }
+  },
+  {
+   "id": 6603,
+   "externalSource": "shopify",
+   "cardName": "Team Rocket's Mewtwo ex",
+   "setName": "Black Star Promo SVP",
+   "cardNumber": "SVP 216",
+   "language": null,
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "2.92",
+   "buyerPrice": 3.25,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "TJs_Cards"
+   }
+  },
+  {
+   "id": 6599,
+   "externalSource": "shopify",
+   "cardName": "Lapras ex",
+   "setName": "Black Star Promo SVP",
+   "cardNumber": "SVP 164",
+   "language": null,
+   "condition": "NM",
+   "grade": null,
+   "gradingCompany": null,
+   "isBundle": false,
+   "price": "10.33",
+   "buyerPrice": 10.99,
+   "buyerShippingPrice": 2.99,
+   "seller": {
+    "username": "TJs_Cards"
+   }
+  }
+ ],
+ "total": 16,
+ "page": 1,
+ "limit": 8,
+ "totalPages": 2
+}

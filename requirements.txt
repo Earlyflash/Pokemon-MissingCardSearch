@@ -1,0 +1,4 @@
+# No required dependencies: the tool uses only the Python standard library.
+# (vendor/pokemon-binder-cover-tool's binder_cover.py imports Pillow for its
+# drawing code; missing_cards.py stubs that import out when Pillow isn't
+# installed, since the TCGdex lookup it reuses never draws anything.)
