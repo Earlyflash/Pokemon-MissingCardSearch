@@ -71,6 +71,14 @@ class EuroShop(Marketplace):
         return [o for c in cards for o in offers_from(EU_SHOP_STOCK, c)]
 
 
+class PriceGuide(Marketplace):
+    id, name, min_interval, price_guide = "guide", "Price Guide", 0, True
+
+    def search(self, card, ctx):
+        return offers_from({"me01-001": [("0.05", "EUR", None)],
+                            "M2a-003": [("40", "EUR", None)]}, card)
+
+
 class KeyedShop(Marketplace):
     id, name, needs = "keyed", "Keyed Shop", ("KEYED_SHOP_TOKEN",)
 
@@ -238,14 +246,16 @@ class RankingTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def run_main(self, *extra):
+    def run_main(self, *extra, plugins=None, guide_csv=None):
         out_csv = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
-        plugins = {"jpshop": JapanShop(), "euroshop": EuroShop(), "keyed": KeyedShop()}
+        guide_csv = guide_csv or tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        plugins = plugins or {"jpshop": JapanShop(), "euroshop": EuroShop(), "keyed": KeyedShop()}
         with patch.object(marketplaces, "discover", return_value=plugins), \
                 patch.object(price_search, "fetch_rate", side_effect=lambda s, d: RATES[(s, d)]), \
                 patch.dict(os.environ, {}, clear=False), redirect_stdout(io.StringIO()) as out:
             os.environ.pop("KEYED_SHOP_TOKEN", None)
-            price_search.main([write_json(MISSING), "--out", out_csv, "--no-cache", *extra])
+            price_search.main([write_json(MISSING), "--out", out_csv, "--guide-out", guide_csv,
+                               "--no-cache", *extra])
         with open(out_csv, encoding="utf-8") as f:
             return list(csv.DictReader(f)), out.getvalue()
 
@@ -268,6 +278,27 @@ class MainTests(unittest.TestCase):
                            r["Listed Currency"]) for r in rows],
                          [("M2a-002", "1.28", "1.50", "EUR"), ("M2a-003", "45.00", "9000", "JPY"),
                           ("me01-001", "0.17", "0.20", "EUR")])
+
+    def test_price_guides_are_reported_and_written_separately(self):
+        guide_csv = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        plugins = {"jpshop": JapanShop(), "euroshop": EuroShop(), "guide": PriceGuide()}
+        rows, out = self.run_main(plugins=plugins, guide_csv=guide_csv)
+        # The guide's cheaper prices don't displace real listings or change the totals.
+        self.assertEqual({r["Marketplace"] for r in rows}, {"jpshop", "euroshop"})
+        self.assertIn("GBP 46.45", out)
+        with open(guide_csv, encoding="utf-8") as f:
+            guide_rows = list(csv.DictReader(f))
+        self.assertEqual([(r["TCGdex Card ID"], r["Marketplace"], r["Price (GBP)"]) for r in guide_rows],
+                         [("M2a-003", "guide", "34.00"), ("me01-001", "guide", "0.04")])
+        self.assertIn("Price guides:", out)
+        self.assertIn("1/1 missing card(s) priced, together GBP 0.04", out)
+
+    def test_price_guide_on_its_own_skips_the_offer_report(self):
+        guide_csv = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        _, out = self.run_main("--marketplace", "guide", guide_csv=guide_csv,
+                               plugins={"guide": PriceGuide()})
+        self.assertNotIn("found for sale", out)
+        self.assertIn("Wrote 2 price guide price(s)", out)
 
     def test_one_marketplace_only(self):
         rows, out = self.run_main("--marketplace", "euroshop")

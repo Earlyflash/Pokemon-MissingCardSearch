@@ -31,8 +31,9 @@ from marketplaces.base import MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer,
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CACHE_DIR = os.path.join(SCRIPT_DIR, ".price_cache")
-# Same free exchange-rate service RareCandyExporter's --currency uses.
-RATES_URL = "https://api.frankfurter.app/latest?from={src}&to={dst}"
+# Same free exchange-rate service RareCandyExporter's --currency uses (it has
+# since moved from api.frankfurter.app, which now redirects here).
+RATES_URL = "https://api.frankfurter.dev/v1/latest?from={src}&to={dst}"
 PENNY = Decimal("0.01")
 
 
@@ -113,8 +114,10 @@ def search_all(plugins, groups, make_ctx):
 # --------------------------------------------------------------- currency --
 
 def fetch_rate(src, dst):
-    url = RATES_URL.format(src=src, dst=dst)
-    with urllib.request.urlopen(url, timeout=15) as resp:
+    # Its Cloudflare front refuses urllib's default User-Agent (error 1010).
+    req = urllib.request.Request(RATES_URL.format(src=src, dst=dst),
+                                 headers={"User-Agent": "Pokemon-MissingCardSearch"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
         return Decimal(str(json.load(resp)["rates"][dst]))
 
 
@@ -185,6 +188,28 @@ def print_report(groups, ranked, currency, plugin_results, skipped):
         print(f"  {pid}: skipped ({why})")
 
 
+def print_guide_report(groups, ranked, currency, plugin_results):
+    """Prices from price-guide marketplaces (one price per card, not
+    listings), kept apart from the offers above."""
+    print("\n" + "=" * 60)
+    print("\nPrice guides: the cheapest copy each site lists, in any language or condition.")
+    print("Not individual listings, so not counted in the totals above.")
+    for gi, (set_entry, cards) in enumerate(groups):
+        priced = [(c, ranked[(gi, c.card_id)]) for c in cards if ranked[(gi, c.card_id)]]
+        if not priced:
+            continue
+        total = sum((lst[0][0] for _, lst in priced if lst[0][0] is not None), Decimal(0))
+        print(f"\n{set_entry['set_name']} [{set_entry['set_id']}, {set_entry['language']}]: "
+              f"{len(priced)}/{len(cards)} missing card(s) priced, together {currency} {total:.2f}")
+        for c, lst in priced:
+            price, o = lst[0]
+            shown = f"{currency} {price:.2f}" if price is not None else f"{o.currency} {o.price}"
+            print(f"  #{c.local_id:<8} {c.name}  from {shown} on {o.marketplace}")
+    for pid, (offers, failures) in sorted(plugin_results.items()):
+        extra = f", {failures} set(s) failed" if failures else ""
+        print(f"  {pid}: {len(offers)} price(s){extra}")
+
+
 def write_csv(groups, ranked, currency, path, cheapest_only=False):
     cols = ["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name", "TCGdex Card ID",
             "Marketplace", f"Price ({currency})", "Listed Price", "Listed Currency", "Condition",
@@ -236,6 +261,10 @@ def build_arg_parser():
                    help="Currency to compare prices in (default: %(default)s).")
     p.add_argument("--out", default="offers.csv",
                    help="CSV to write the offers to (default: %(default)s).")
+    p.add_argument("--guide-out", default="price_guide.csv",
+                   help="CSV for prices from price-guide marketplaces such as Cardmarket, which "
+                        "publish one price per card rather than listings and are kept apart from "
+                        "the offers (default: %(default)s).")
     p.add_argument("--cheapest-only", action="store_true",
                    help="Write only the cheapest offer per card instead of every offer.")
     p.add_argument("--include-uncertain", action="store_true",
@@ -275,12 +304,23 @@ def main(argv=None):
         lambda p: SearchContext(p, config={k: os.environ[k] for k in p.needs},
                                 cache_dir=cache_dir, verbose=args.verbose))
 
+    guide_ids = {p.id for p in plugins if p.price_guide}
     offers = [pair for found, _ in plugin_results.values() for pair in found]
     rates = exchange_rates({o.currency.upper() for _, o in offers}, currency)
-    ranked = rank_offers(groups, offers, rates, args.include_uncertain)
-    print_report(groups, ranked, currency, plugin_results, skipped)
-    rows = write_csv(groups, ranked, currency, args.out, args.cheapest_only)
-    print(f"Wrote {rows} offer(s) to {os.path.abspath(args.out)}")
+    listings = {pid: r for pid, r in plugin_results.items() if pid not in guide_ids}
+    guides = {pid: r for pid, r in plugin_results.items() if pid in guide_ids}
+    if listings or not guides:
+        ranked = rank_offers(groups, [pair for found, _ in listings.values() for pair in found],
+                             rates, args.include_uncertain)
+        print_report(groups, ranked, currency, listings, skipped)
+        rows = write_csv(groups, ranked, currency, args.out, args.cheapest_only)
+        print(f"Wrote {rows} offer(s) to {os.path.abspath(args.out)}")
+    if guides:
+        ranked = rank_offers(groups, [pair for found, _ in guides.values() for pair in found],
+                             rates, args.include_uncertain)
+        print_guide_report(groups, ranked, currency, guides)
+        rows = write_csv(groups, ranked, currency, args.guide_out)
+        print(f"Wrote {rows} price guide price(s) to {os.path.abspath(args.guide_out)}")
 
 
 if __name__ == "__main__":
