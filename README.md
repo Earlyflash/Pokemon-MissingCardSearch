@@ -18,13 +18,15 @@ vendored as git submodules under `vendor/`:
 ```bash
 git clone --recurse-submodules https://github.com/Earlyflash/Pokemon-MissingCardSearch
 cd Pokemon-MissingCardSearch
-pip install -r requirements.txt
 
 # Only needed for --profile (running the export for you):
 cd vendor/RareCandyExporter && npm install && cd ../..
 ```
 
 Already cloned without `--recurse-submodules`? Run `git submodule update --init`.
+
+The Python side needs only the standard library (Python 3.9+). Pillow isn't
+needed, even though the binder cover tool uses it for drawing.
 
 ## Usage
 

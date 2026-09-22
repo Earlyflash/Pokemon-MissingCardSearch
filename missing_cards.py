@@ -40,6 +40,18 @@ if not os.path.isfile(os.path.join(BINDER_TOOL_DIR, "binder_cover.py")):
     sys.exit("vendor/pokemon-binder-cover-tool is empty -- run "
              "`git submodule update --init` first.")
 sys.path.insert(0, BINDER_TOOL_DIR)
+try:
+    import PIL  # noqa: F401
+except ImportError:
+    # binder_cover imports Pillow at load time for its drawing code, but the
+    # TCGdex lookup this tool reuses never touches it. Stand in empty modules
+    # so Pillow isn't a required install just to satisfy that import.
+    import types
+    _pil = types.ModuleType("PIL")
+    for _sub in ("Image", "ImageDraw", "ImageFont", "ImageFilter"):
+        setattr(_pil, _sub, types.ModuleType(f"PIL.{_sub}"))
+        sys.modules[f"PIL.{_sub}"] = getattr(_pil, _sub)
+    sys.modules["PIL"] = _pil
 import binder_cover  # noqa: E402  (path set up just above)
 from binder_cover import TCGDEX_BASE, TCGDEX_LANGS, TCGDEX_FIELD_PRIORITY  # noqa: E402
 
