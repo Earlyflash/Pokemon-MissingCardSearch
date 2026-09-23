@@ -218,9 +218,11 @@ def fetch_card_list(set_id, language):
 # ------------------------------------------------------- English names --
 
 def _cardmarket_base_name(name):
-    """Cardmarket disambiguates same-named products with a trailing
-    " [Attack name]" (e.g. "Weedle [Multiply]"); the card's name is the rest."""
-    return re.sub(r"\s*\[[^\]]*\]\s*$", "", name or "").strip()
+    """Cardmarket disambiguates same-named Pokémon with their attack names in
+    brackets ("Tangela [Poison Powder | Hook]"), sometimes mid-name ("... [...]
+    Energy"); drop just the bracket group and keep the rest, including any
+    parenthetical like "Pikachu (Top Deck)"."""
+    return " ".join(re.sub(r"\s*\[[^\]]*\]", "", name or "").split())
 
 
 def add_english_names(results):

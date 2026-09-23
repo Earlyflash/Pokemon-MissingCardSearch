@@ -347,6 +347,14 @@ class MainTests(unittest.TestCase):
             missing_cards.add_english_names(results)
         self.assertIsNone(results[0]["missing"][0]["name_en"])
 
+    def test_cardmarket_name_cleanup(self):
+        clean = missing_cards._cardmarket_base_name
+        self.assertEqual(clean("Tangela [Poison Powder | Hook]"), "Tangela")
+        self.assertEqual(clean("AZ's Tranquility"), "AZ's Tranquility")
+        self.assertEqual(clean("Basic Fire [Holo] Energy"), "Basic Fire Energy")
+        self.assertEqual(clean("Pikachu (Top Deck)"), "Pikachu (Top Deck)")
+        self.assertEqual(clean(None), "")
+
     def test_bad_map_flag_exits(self):
         export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1)])
         try:
