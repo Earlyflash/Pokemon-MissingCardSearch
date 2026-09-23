@@ -52,7 +52,7 @@ It prints a per-set report and writes every missing card to
 
 ```
 MEGA Dream ex [M2a, Japanese]: own <owned>/<total> (<pct>%), missing <n>
-  #002      フシギソウ
+  #002      フシギソウ (Ivysaur)
   ...
 ```
 
@@ -64,6 +64,15 @@ MEGA Dream ex [M2a, Japanese]: own <owned>/<total> (<pct>%), missing <n>
 | Card Number | TCGdex's card number within the set |
 | Card Name | TCGdex's card name (in that language's dataset) |
 | TCGdex Card ID | Stable id, handy for the next step (marketplace search) |
+| English Name | The card's English name, also for Japanese/Chinese/Korean cards (blank if unknown) |
+
+TCGdex only has Japanese names for Japanese cards, so English names come
+from Cardmarket, which lists every card in English: each card's Cardmarket
+product id comes from TCGdex, and its name from Cardmarket's free daily
+product list (about 14 MB, downloaded once per run), plus one TCGdex request
+per missing card. Cards TCGdex hasn't linked to a Cardmarket product yet,
+usually from very new sets, are left blank. `--no-english-names` skips all of
+this.
 
 `--json FILE` writes the same data grouped by set, plus any sets it couldn't
 match, for other tools to consume:
@@ -76,7 +85,7 @@ match, for other tools to consume:
     "tcgdex_lang": "ja", "total": 250, "owned": 200, "percent_complete": 80.0,
     "missing": [{
       "card_id": "M2a-002", "set_id": "M2a", "set_name": "MEGA Dream ex",
-      "local_id": "002", "name": "フシギソウ", "language": "Japanese",
+      "local_id": "002", "name": "フシギソウ", "name_en": "Ivysaur", "language": "Japanese",
       "tcgdex_lang": "ja", "rarity": null, "finish": null
     }]
   }],
@@ -102,6 +111,7 @@ include them, and fetching rarity costs one request per card.
 | `--min-complete PERCENT` | Only list sets you already own at least this much of (default `75`). `0` lists every set you own a card from. |
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
+| `--no-english-names` | Don't look up English names for non-English cards. |
 
 ## Pricing the missing cards
 
