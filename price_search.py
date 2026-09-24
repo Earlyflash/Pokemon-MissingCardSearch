@@ -26,6 +26,7 @@ import html
 import json
 import os
 import sys
+import time
 import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -116,12 +117,17 @@ def run_plugin(plugin, groups, ctx):
     pairs, plus how many sets failed. The set index keeps offers apart when
     two collections share TCGdex card ids (e.g. English and German prints both
     use the English dataset). Sets run one after another so a plugin's own
-    requests stay paced."""
+    requests stay paced. Progress goes to ctx.progress (stderr)."""
     offers, failures = [], 0
-    for gi, (set_entry, cards) in enumerate(groups):
-        wanted = [c for c in cards if plugin.handles(c)]
-        if not wanted:
-            continue
+    todo = [(gi, set_entry, [c for c in cards if plugin.handles(c)])
+            for gi, (set_entry, cards) in enumerate(groups)]
+    todo = [t for t in todo if t[2]]
+    noun = "price(s)" if plugin.price_guide else "offer(s)"
+    if not todo:
+        ctx.progress("nothing to search (none of the missing cards are in languages it sells)")
+    else:
+        ctx.progress(f"started: {len(todo)} set(s) to search")
+    for n, (gi, set_entry, wanted) in enumerate(todo, 1):
         ids = {c.card_id for c in wanted}
         try:
             found = plugin.search_set(wanted, ctx)
@@ -129,22 +135,37 @@ def run_plugin(plugin, groups, ctx):
             ctx.log(f"{set_entry['set_name']}: search failed: {e}")
             failures += 1
             continue
+        before = len(offers)
         for o in found:
             if not isinstance(o, Offer) or o.card_id not in ids or o.match not in MATCH_LEVELS:
                 ctx.log(f"ignoring malformed offer: {o!r}")
                 continue
             o.marketplace = plugin.id
             offers.append((gi, o))
+        ctx.progress(f"set {n}/{len(todo)} {set_entry['set_name']}: "
+                     f"{len(offers) - before} {noun}")
     return offers, failures
 
 
 def search_all(plugins, groups, make_ctx):
-    """{plugin id: (offers, failed set count)}, running marketplaces in parallel."""
+    """{plugin id: (offers, failed set count)}, running marketplaces in parallel
+    and saying on stderr as each one finishes."""
     results = {}
+    start = time.monotonic()
+    ctxs = {p.id: make_ctx(p) for p in plugins}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(plugins))) as pool:
-        futures = {pool.submit(run_plugin, p, groups, make_ctx(p)): p.id for p in plugins}
+        futures = {pool.submit(run_plugin, p, groups, ctxs[p.id]): p for p in plugins}
         for fut in concurrent.futures.as_completed(futures):
-            results[futures[fut]] = fut.result()
+            p = futures[fut]
+            results[p.id] = fut.result()
+            offers, failures = results[p.id]
+            ctx = ctxs[p.id]
+            noun = "price(s)" if p.price_guide else "offer(s)"
+            failed = f", {failures} set(s) failed" if failures else ""
+            left = [q.id for q in plugins if q.id not in results]
+            waiting = f"; still waiting on {', '.join(left)}" if left else ""
+            ctx.progress(f"done in {time.monotonic() - start:.0f}s: {len(offers)} {noun}{failed}, "
+                         f"{ctx.pages_summary()} ({len(results)}/{len(plugins)} finished{waiting})")
     return results
 
 
