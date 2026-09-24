@@ -41,6 +41,40 @@ RATES_URL = "https://api.frankfurter.dev/v1/latest?from={src}&to={dst}"
 PENNY = Decimal("0.01")
 
 
+# ---------------------------------------------------------------- settings --
+
+DEFAULT_ENV_FILE = os.path.join(SCRIPT_DIR, ".env")
+
+
+def load_env_file(path, environ=os.environ):
+    """Copy KEY=value lines from a .env file into `environ`, so settings such
+    as API keys can live in a git-ignored file instead of the shell. A
+    variable already set in the environment wins. Blank lines, # comments,
+    an `export ` prefix and quotes around the value are allowed. A missing
+    file is fine; returns the names it set."""
+    loaded = []
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return loaded
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key and key not in environ:
+            environ[key] = value
+            loaded.append(key)
+    return loaded
+
+
 # ------------------------------------------------------------------ input --
 
 # missing_cards.py's print languages -> TCGdex dataset, for reading its CSV
@@ -481,6 +515,10 @@ def build_arg_parser():
     p.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR,
                    help="Where marketplace responses are cached (default: .price_cache).")
     p.add_argument("--no-cache", action="store_true", help="Always fetch fresh results.")
+    p.add_argument("--env-file", default=DEFAULT_ENV_FILE, metavar="FILE",
+                   help="File of KEY=value settings, such as PULSEAPI_KEY, read before the "
+                        "marketplaces are chosen; variables already set in the environment win "
+                        "(default: .env next to this script).")
     p.add_argument("-v", "--verbose", action="store_true", help="Print every request made.")
     return p
 
@@ -491,6 +529,7 @@ def main(argv=None):
         # encode Japanese card names, so print '?' instead of crashing.
         sys.stdout.reconfigure(errors="replace")
     args = build_arg_parser().parse_args(argv)
+    load_env_file(args.env_file)
     available = marketplaces.discover()
     if args.list_marketplaces:
         list_marketplaces(available)

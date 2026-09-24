@@ -282,7 +282,8 @@ class RankingTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def run_main(self, *extra, plugins=None, guide_csv=None, html_out=None, missing=MISSING):
+    def run_main(self, *extra, plugins=None, guide_csv=None, html_out=None, missing=MISSING,
+                 env_file=os.devnull):
         out_csv = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
         html_out = html_out or tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
         guide_csv = guide_csv or tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
@@ -293,7 +294,8 @@ class MainTests(unittest.TestCase):
                 redirect_stderr(io.StringIO()) as err:
             os.environ.pop("KEYED_SHOP_TOKEN", None)
             price_search.main([write_json(missing), "--out", out_csv, "--guide-out", guide_csv,
-                               "--html-out", html_out, "--no-cache", *extra])
+                               "--html-out", html_out, "--no-cache", "--env-file", env_file,
+                               *extra])
         self.progress = err.getvalue()
         with open(out_csv, encoding="utf-8") as f:
             return list(csv.DictReader(f)), out.getvalue()
@@ -355,6 +357,32 @@ class MainTests(unittest.TestCase):
         rows, out = self.run_main("--marketplace", "euroshop")
         self.assertEqual({r["Marketplace"] for r in rows}, {"euroshop"})
         self.assertIn("Not found for sale: #003", out)
+
+
+class EnvFileTests(unittest.TestCase):
+    def env_file(self, text):
+        path = tempfile.NamedTemporaryFile(suffix=".env", delete=False).name
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_reads_keys_values_quotes_and_export(self):
+        env = {}
+        loaded = price_search.load_env_file(self.env_file(
+            "# PulseAPI\n\nPULSEAPI_KEY=pk_live_abc\nexport A = 'one two'\nB=\"x=y\"\nnot a line\n"), env)
+        self.assertEqual(env, {"PULSEAPI_KEY": "pk_live_abc", "A": "one two", "B": "x=y"})
+        self.assertEqual(loaded, ["PULSEAPI_KEY", "A", "B"])
+
+    def test_environment_wins_and_missing_file_is_fine(self):
+        env = {"PULSEAPI_KEY": "from-shell"}
+        price_search.load_env_file(self.env_file("PULSEAPI_KEY=from-file\n"), env)
+        self.assertEqual(env, {"PULSEAPI_KEY": "from-shell"})
+        self.assertEqual(price_search.load_env_file("/no/such/.env", env), [])
+
+    def test_main_uses_a_key_from_the_env_file(self):
+        rows, out = MainTests.run_main(MainTests(), "--marketplace", "keyed",
+                                       env_file=self.env_file("KEYED_SHOP_TOKEN=secret\n"))
+        self.assertNotIn("Skipped", out)
 
 
 class HtmlTableTests(unittest.TestCase):
