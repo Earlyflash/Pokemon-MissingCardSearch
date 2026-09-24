@@ -248,12 +248,15 @@ def print_report(groups, ranked, currency, plugin_results, skipped):
         print(f"  {pid}: skipped ({why})")
 
 
-def print_guide_report(groups, ranked, currency, plugin_results):
+def print_guide_report(groups, ranked, currency, plugin_results, plugins=()):
     """Prices from price-guide marketplaces (one price per card, not
     listings), kept apart from the offers above."""
     print("\n" + "=" * 60)
-    print("\nPrice guides: the cheapest copy each site lists, in any language or condition.")
-    print("Not individual listings, so not counted in the totals above.")
+    print("\nPrice guides: one price per card, not individual listings, so not counted "
+          "in the totals above.")
+    for p in plugins:
+        print(f"  {p.id}: {p.guide_description}.")
+    guides = {p.id: p.guide_prefix for p in plugins}
     for gi, (set_entry, cards) in enumerate(groups):
         priced = [(c, ranked[(gi, c.card_id)]) for c in cards if ranked[(gi, c.card_id)]]
         if not priced:
@@ -264,7 +267,8 @@ def print_guide_report(groups, ranked, currency, plugin_results):
         for c, lst in priced:
             price, o = lst[0]
             shown = f"{currency} {price:.2f}" if price is not None else f"{o.currency} {o.price}"
-            print(f"  #{c.local_id:<8} {c.name}  from {shown} on {o.marketplace}")
+            prefix = guides.get(o.marketplace, "from ")
+            print(f"  #{c.local_id:<8} {c.name}  {prefix}{shown} on {o.marketplace}")
     for pid, (offers, failures) in sorted(plugin_results.items()):
         extra = f", {failures} set(s) failed" if failures else ""
         print(f"  {pid}: {len(offers)} price(s){extra}")
@@ -333,7 +337,7 @@ def _money(amount, currency):
     return f"{CURRENCY_SYMBOLS.get(currency, currency + ' ')}{amount:.2f}"
 
 
-def _html_cell(offers, currency, guide=False, best=False):
+def _html_cell(offers, currency, guide=False, best=False, prefix="from "):
     """One marketplace's cell for one card: its cheapest offer, linked."""
     esc = html.escape
     if not offers:
@@ -344,7 +348,7 @@ def _html_cell(offers, currency, guide=False, best=False):
     note = " · ".join(n for n in notes if n)
     classes = "price" + (" guide" if guide else "") + (" best" if best else "")
     return (f'<td class="{classes}"><a href="{esc(o.url)}" title="{esc(o.title)}" target="_blank" '
-            f'rel="noopener">{"from " if guide else ""}{esc(shown)}</a>'
+            f'rel="noopener">{prefix if guide else ""}{esc(shown)}</a>'
             f'{f"<small>{esc(note)}</small>" if note else ""}</td>')
 
 
@@ -356,7 +360,8 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
     esc = html.escape
     columns = ([(p, False) for p in plugins if not p.price_guide]
                + [(p, True) for p in plugins if p.price_guide])
-    head = "".join(f"<th>{esc(p.name)}{' (price guide)' if g else ''}</th>" for p, g in columns)
+    head = "".join(f"<th>{esc(p.name)}{f' ({esc(p.guide_label)})' if g else ''}</th>"
+                   for p, g in columns)
     body, grand_found, grand_cards, grand_total = [], 0, 0, Decimal(0)
     shop_totals = {p.id: [Decimal(0), 0] for p, _ in columns}  # [sum of cheapest copies, cards]
     for gi, (set_entry, cards) in enumerate(groups):
@@ -374,7 +379,8 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                 if mine and mine[0][0] is not None:
                     shop_totals[p.id][0] += mine[0][0]
                     shop_totals[p.id][1] += 1
-                cells.append(_html_cell(mine, currency, guide=g, best=not g and p.id == best_id))
+                cells.append(_html_cell(mine, currency, guide=g, best=not g and p.id == best_id,
+                                        prefix=p.guide_prefix))
             if c.name_en and c.name_en != c.name:
                 card = f'{esc(c.name_en)}<small>{esc(c.name)}</small>'
             else:
@@ -390,12 +396,13 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                     f'each {esc(_money(total, currency))}</span></th></tr>')
         body.extend(rows)
     foot = "".join(
-        f'<td class="price{" guide" if g else ""}">{"from " if g else ""}'
+        f'<td class="price{" guide" if g else ""}">{esc(p.guide_prefix) if g else ""}'
         f'{esc(_money(shop_totals[p.id][0], currency))}'
         f'<small>{shop_totals[p.id][1]} card(s)</small></td>' for p, g in columns)
-    guide_note = (" Price-guide columns show the cheapest copy that site lists in any language "
-                  "or condition; they aren't listings and don't count towards the totals."
-                  if any(g for _, g in columns) else "")
+    guide_note = "".join(f" {p.name} shows {p.guide_description}." for p, g in columns if g)
+    if guide_note:
+        guide_note += (" Those price-guide columns aren't listings and don't count towards "
+                       "the totals.")
     doc = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -525,7 +532,8 @@ def main(argv=None):
     if guides:
         guide_ranked = rank_offers(groups, [pair for found, _ in guides.values() for pair in found],
                                    rates, args.include_uncertain)
-        print_guide_report(groups, guide_ranked, currency, guides)
+        print_guide_report(groups, guide_ranked, currency, guides,
+                           [p for p in plugins if p.id in guide_ids])
         rows = write_csv(groups, guide_ranked, currency, args.guide_out)
         print(f"Wrote {rows} price guide price(s) to {os.path.abspath(args.guide_out)}")
     html_out = args.html_out or os.path.join(os.path.dirname(args.out), "price_table.html")

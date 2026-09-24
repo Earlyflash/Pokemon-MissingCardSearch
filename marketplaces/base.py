@@ -84,6 +84,12 @@ class Marketplace:
     # core reports those prices separately and never ranks them against real
     # listings.
     price_guide = False
+    # How a price guide's prices are labelled: the price table's column says
+    # "<name> (<guide_label>)" and each price reads "<guide_prefix>£1.23";
+    # the text report describes the prices as `guide_description`.
+    guide_label = "price guide"
+    guide_prefix = "from "
+    guide_description = "the cheapest copy it lists, in any language or condition"
 
     def search(self, card, ctx):
         """Return a list of Offers for one MissingCard."""
