@@ -130,6 +130,15 @@ prices are printed in their own section after the offers, are never ranked
 against real listings or counted in the totals, and go to their own CSV,
 `price_guide.csv` (same columns as `offers.csv`).
 
+It also writes `price_table.html` (next to `offers.csv`), the easiest way to
+read the results: open it in a browser for one row per missing card, grouped
+by set, and one column per marketplace. Each cell is that marketplace's
+cheapest copy (with its condition or grade, and how many more copies it has),
+and the price links straight to the listing. The cheapest listing for each
+card is highlighted. Price-guide marketplaces such as Cardmarket get their own
+columns as "from" prices and are never highlighted. A checkbox hides the cards
+nobody has for sale.
+
 | Flag | Meaning |
 |---|---|
 | `--marketplace ID` | Only search this marketplace (repeatable). Default: every marketplace whose settings are present. |
@@ -138,6 +147,7 @@ against real listings or counted in the totals, and go to their own CSV,
 | `--currency CODE` | Currency to compare in (default `GBP`), converted with the same free rate service RareCandyExporter uses. |
 | `--out FILE` | Where to write the offers (default `offers.csv`). |
 | `--guide-out FILE` | Where to write price-guide prices, e.g. Cardmarket's (default `price_guide.csv`). |
+| `--html-out FILE` | Where to write the HTML price table (default `price_table.html` next to `--out`). |
 | `--cheapest-only` | Write only the cheapest offer per card. |
 | `--include-uncertain` | Also count offers a marketplace isn't sure are the right print. |
 | `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached for 6 hours in `.price_cache/`. |
