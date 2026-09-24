@@ -421,13 +421,15 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
     """A table with one row per missing card and one column per marketplace.
     Each cell is that marketplace's cheapest copy, linked to the listing; the
     cheapest listing for the card is highlighted. Price-guide marketplaces get
-    their own columns as "from" prices and are never highlighted. A market
-    price guide (e.g. PulseAPI) comes straight after the card name, in bold,
-    and stays in view with the card number and name when scrolling sideways."""
+    their own columns, before the shops, as "from" prices and are never
+    highlighted. A market price guide (e.g. PulseAPI) comes first, straight
+    after the card name, in bold, and stays in view with the card number and
+    name when scrolling sideways."""
     esc = html.escape
     market_cols = [(p, True) for p in plugins if p.price_guide and p.market_reference]
-    columns = (market_cols + [(p, False) for p in plugins if not p.price_guide]
-               + [(p, True) for p in plugins if p.price_guide and not p.market_reference])
+    columns = (market_cols
+               + [(p, True) for p in plugins if p.price_guide and not p.market_reference]
+               + [(p, False) for p in plugins if not p.price_guide])
     # Classes for the columns that stay put when scrolling sideways: the
     # number, the card and any market price columns; the last gets an edge.
     sticky = ["stick"] * (2 + len(market_cols))
