@@ -23,6 +23,7 @@ Usage examples:
 Run `python missing_cards.py --help` for the full flag list.
 """
 import argparse
+import concurrent.futures
 import csv
 import json
 import os
@@ -54,6 +55,7 @@ except ImportError:
     sys.modules["PIL"] = _pil
 import binder_cover  # noqa: E402  (path set up just above)
 from binder_cover import TCGDEX_BASE, TCGDEX_LANGS  # noqa: E402
+from marketplaces.cardmarket import product_id  # noqa: E402
 
 # RareCandyExporter writes a full language name per card (detected from the
 # card's scrydex image URL). These are the only TCGdex datasets whose card list
@@ -70,7 +72,16 @@ LANGUAGE_TO_TCGDEX = {
     "korean": ("ko",),
 }
 
-OUT_COLUMNS = ["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name", "TCGdex Card ID"]
+OUT_COLUMNS = ["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name", "TCGdex Card ID",
+               "English Name"]
+
+# Cardmarket's public product list names every product in English, Japanese
+# prints included, and TCGdex's card records carry the Cardmarket product id.
+# Together they give an English name for cards TCGdex only has in Japanese
+# (or Chinese/Korean) -- the same route the Cardmarket marketplace plugin uses
+# for prices.
+CARDMARKET_PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
+                           "products_singles_6.json")
 
 
 # ------------------------------------------------------ RareCandy export --
@@ -204,6 +215,55 @@ def fetch_card_list(set_id, language):
     return None, None, None
 
 
+# ------------------------------------------------------- English names --
+
+def _cardmarket_base_name(name):
+    """Cardmarket disambiguates same-named Pokémon with their attack names in
+    brackets ("Tangela [Poison Powder | Hook]"), sometimes mid-name ("... [...]
+    Energy"); drop just the bracket group and keep the rest, including any
+    parenthetical like "Pikachu (Top Deck)"."""
+    return " ".join(re.sub(r"\s*\[[^\]]*\]", "", name or "").split())
+
+
+def add_english_names(results):
+    """Set c["name_en"] on every missing card. English-dataset cards already
+    have it; for the rest it's looked up via each card's Cardmarket product
+    (one TCGdex request per card, run concurrently, plus Cardmarket's product
+    list once). Cards it can't resolve are left with name_en None."""
+    todo = []
+    for r in results:
+        for c in r["missing"]:
+            if r["tcgdex_lang"] == "en":
+                c["name_en"] = c.get("name")
+            else:
+                c["name_en"] = None
+                todo.append((r["tcgdex_lang"], c))
+    if not todo:
+        return
+
+    print(f"\n[names] Looking up English names for {len(todo)} card(s) via Cardmarket...")
+    products = binder_cover._fetch_json(CARDMARKET_PRODUCTS_URL)
+    if not products:
+        print("[warning] Couldn't download Cardmarket's product list, so English names "
+              "are left blank.")
+        return
+    names = {p["idProduct"]: p.get("name") for p in products.get("products", [])
+             if p.get("idProduct") is not None}
+
+    def lookup(item):
+        lang, c = item
+        detail = binder_cover._fetch_json(f"{TCGDEX_BASE}/{lang}/cards/{c.get('id')}")
+        return c, _cardmarket_base_name(names.get(product_id(detail))) or None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        for c, name_en in pool.map(lookup, todo):
+            c["name_en"] = name_en
+    found = sum(1 for _, c in todo if c["name_en"])
+    if found < len(todo):
+        print(f"[names] Found {found}/{len(todo)}; the rest have no Cardmarket product "
+              "on TCGdex yet.")
+
+
 # ------------------------------------------------------------- diffing --
 
 def _sort_key(number):
@@ -224,7 +284,13 @@ def find_missing(owned, set_map):
         print(f"\n[set] {set_name} ({language}, {len(numbers)} owned)")
         set_id = resolve_set_id(set_name, language, set_map)
         if not set_id:
-            unmatched.append((set_name, language, "no TCGdex set found"))
+            reason = "no TCGdex set found"
+            if language.lower() != "english":
+                # RareCandy names non-English sets in English, but TCGdex only
+                # has their local-language name, so these need a mapping.
+                reason += (f" (TCGdex only has {language} set names, so add the set "
+                           "code to set_map.json)")
+            unmatched.append((set_name, language, reason))
             continue
         cards, lang_used, _ = fetch_card_list(set_id, language)
         if not cards:
@@ -266,7 +332,9 @@ def print_report(results, unmatched, below=(), min_complete=0):
               f"{r['owned_count']}/{r['total']} ({completion(r):.0f}%), "
               f"missing {len(r['missing'])}")
         for c in r["missing"]:
-            print(f"  #{c.get('localId', '?'):<8} {c.get('name', '')}")
+            name, name_en = c.get("name", ""), c.get("name_en")
+            shown = f"{name} ({name_en})" if name_en and name_en != name else name
+            print(f"  #{c.get('localId', '?'):<8} {shown}")
         if r["unknown_owned"]:
             print(f"  (owned but not in TCGdex's list: {', '.join(r['unknown_owned'])} -- "
                   "numbering mismatch or wrong set match)")
@@ -291,7 +359,8 @@ def write_csv(results, path):
         for r in results:
             for c in r["missing"]:
                 w.writerow([r["set_name"], r["set_id"], r["language"],
-                            c.get("localId", ""), c.get("name", ""), c.get("id", "")])
+                            c.get("localId", ""), c.get("name", ""), c.get("id", ""),
+                            c.get("name_en") or ""])
 
 
 def write_json(results, unmatched, path, below=(), min_complete=0):
@@ -314,6 +383,7 @@ def write_json(results, unmatched, path, below=(), min_complete=0):
                 "set_name": r["set_name"],
                 "local_id": c.get("localId"),
                 "name": c.get("name"),
+                "name_en": c.get("name_en"),
                 "language": r["language"],
                 "tcgdex_lang": r["tcgdex_lang"],
                 "rarity": None,
@@ -359,6 +429,9 @@ def build_arg_parser():
                         "(default: %(default)g). 0 lists every set you own a card from.")
     p.add_argument("--out", default="missing_cards.csv",
                    help="CSV to write the missing cards to (default: %(default)s).")
+    p.add_argument("--no-english-names", dest="english_names", action="store_false",
+                   help="Skip looking up English names for non-English cards (saves "
+                        "Cardmarket's ~14 MB product list and one TCGdex request per card).")
     p.add_argument("--json", metavar="FILE",
                    help="Also write the missing cards as JSON, grouped by set.")
     return p
@@ -395,6 +468,8 @@ def main(argv=None):
 
     results, unmatched = find_missing(owned, set_map)
     results, below = apply_threshold(results, args.min_complete)
+    if args.english_names:
+        add_english_names(results)
     print_report(results, unmatched, below, args.min_complete)
     write_csv(results, args.out)
     print(f"Wrote {sum(len(r['missing']) for r in results)} row(s) to {os.path.abspath(args.out)}")

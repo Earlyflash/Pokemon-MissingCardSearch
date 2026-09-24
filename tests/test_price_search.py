@@ -1,4 +1,5 @@
 import csv
+import html.parser
 import io
 import json
 import os
@@ -273,8 +274,9 @@ class RankingTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def run_main(self, *extra, plugins=None, guide_csv=None):
+    def run_main(self, *extra, plugins=None, guide_csv=None, html_out=None):
         out_csv = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        html_out = html_out or tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
         guide_csv = guide_csv or tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
         plugins = plugins or {"jpshop": JapanShop(), "euroshop": EuroShop(), "keyed": KeyedShop()}
         with patch.object(marketplaces, "discover", return_value=plugins), \
@@ -282,7 +284,7 @@ class MainTests(unittest.TestCase):
                 patch.dict(os.environ, {}, clear=False), redirect_stdout(io.StringIO()) as out:
             os.environ.pop("KEYED_SHOP_TOKEN", None)
             price_search.main([write_json(MISSING), "--out", out_csv, "--guide-out", guide_csv,
-                               "--no-cache", *extra])
+                               "--html-out", html_out, "--no-cache", *extra])
         with open(out_csv, encoding="utf-8") as f:
             return list(csv.DictReader(f)), out.getvalue()
 
@@ -333,6 +335,71 @@ class MainTests(unittest.TestCase):
         rows, out = self.run_main("--marketplace", "euroshop")
         self.assertEqual({r["Marketplace"] for r in rows}, {"euroshop"})
         self.assertIn("Not found for sale: #003", out)
+
+
+class HtmlTableTests(unittest.TestCase):
+    """The HTML price table: a row per missing card, a column per marketplace."""
+
+    class Cells(html.parser.HTMLParser):
+        """{card number: [(cell classes, link, text), ...]} from the table body."""
+
+        def __init__(self):
+            super().__init__()
+            self.rows, self.row, self.cell, self.headers, self.in_head = {}, None, None, [], False
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "thead":
+                self.in_head = True
+            elif tag == "tr" and not self.in_head and "set" not in a.get("class", ""):
+                self.row = []
+            elif tag == "td" and self.row is not None:
+                self.cell = [a.get("class", ""), None, ""]
+            elif tag == "a" and self.cell is not None:
+                self.cell[1] = a["href"]
+
+        def handle_endtag(self, tag):
+            if tag == "thead":
+                self.in_head = False
+            elif tag == "td" and self.cell is not None:
+                self.row.append(tuple(self.cell))
+                self.cell = None
+            elif tag == "tr" and self.row:
+                self.rows[self.row[0][2]] = self.row[2:]
+                self.row = None
+
+        def handle_data(self, data):
+            if self.in_head and data.strip():
+                self.headers.append(data)
+            elif self.cell is not None:
+                self.cell[2] += data
+
+    def table(self, plugins):
+        html_out = tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
+        MainTests.run_main(MainTests(), plugins=plugins, html_out=html_out)
+        parser = self.Cells()
+        with open(html_out, encoding="utf-8") as f:
+            parser.feed(f.read())
+        return parser
+
+    def test_one_row_per_card_and_cheapest_highlighted_and_linked(self):
+        t = self.table({"jpshop": JapanShop(), "euroshop": EuroShop()})
+        self.assertEqual(t.headers, ["#", "Card", "Euro Shop", "Japan Shop"])
+        self.assertEqual(list(t.rows), ["#002", "#003", "#001"])
+        (eu_cls, eu_url, eu_text), (jp_cls, _, jp_text) = t.rows["#002"]
+        self.assertEqual((eu_cls, eu_url, eu_text), ("price best", "https://shop.example/M2a-002",
+                                                     "£1.28"))
+        # Japan Shop's cheapest copy of two, with its condition and the other copy counted.
+        self.assertEqual((jp_cls, jp_text), ("price", "£1.50LP · +1 more"))
+        # No Euro Shop copy of #003: an empty cell.
+        self.assertEqual(t.rows["#003"][0], ("price", None, ""))
+
+    def test_price_guide_gets_its_own_from_column_never_highlighted(self):
+        t = self.table({"euroshop": EuroShop(), "guide": PriceGuide()})
+        self.assertEqual(t.headers, ["#", "Card", "Euro Shop", "Price Guide (price guide)"])
+        # The guide's 0.04 is cheaper than Euro Shop's 0.17, but Euro Shop stays highlighted.
+        self.assertEqual([c[0] for c in t.rows["#001"]], ["price best", "price guide"])
+        self.assertEqual(t.rows["#001"][1][2], "from £0.04")
 
 
 class SearchContextTests(unittest.TestCase):

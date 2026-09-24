@@ -21,6 +21,8 @@ Run `python price_search.py --help` for the full flag list.
 import argparse
 import concurrent.futures
 import csv
+import datetime
+import html
 import json
 import os
 import sys
@@ -270,6 +272,127 @@ def write_csv(groups, ranked, currency, path, cheapest_only=False):
     return rows
 
 
+CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥"}
+
+HTML_STYLE = """
+:root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d9d9de; --head: #f2f2f5;
+        --set: #e6ecf5; --best: #d4f5dc; --best-fg: #0b5d1e; --link: #0a58ca; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151517; --fg: #ececf0; --muted: #9a9aa2; --line: #34343a; --head: #202024;
+          --set: #1f2a3a; --best: #174a26; --best-fg: #b8f0c6; --link: #7fb2ff; }
+}
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
+       font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+p { margin: 4px 0; color: var(--muted); }
+label { display: inline-block; margin: 8px 0 12px; }
+.wrap { overflow-x: auto; }
+table { border-collapse: collapse; min-width: 100%; }
+th, td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left;
+         vertical-align: top; }
+thead th { position: sticky; top: 0; background: var(--head); white-space: nowrap; }
+tr.set th { background: var(--set); font-weight: 600; }
+tr.set th span { font-weight: normal; color: var(--muted); }
+td.num { white-space: nowrap; color: var(--muted); }
+td.price { white-space: nowrap; }
+td.best { background: var(--best); }
+td.best a { color: var(--best-fg); font-weight: 600; }
+td.guide, td.guide a { color: var(--muted); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+small { display: block; color: var(--muted); }
+body.for-sale-only tr.unsold { display: none; }
+"""
+
+
+def _money(amount, currency):
+    return f"{CURRENCY_SYMBOLS.get(currency, currency + ' ')}{amount:.2f}"
+
+
+def _html_cell(offers, currency, guide=False, best=False):
+    """One marketplace's cell for one card: its cheapest offer, linked."""
+    esc = html.escape
+    if not offers:
+        return '<td class="price"></td>'
+    price, o = offers[0]
+    shown = _money(price, currency) if price is not None else f"{o.currency} {o.price}"
+    notes = [o.grade and f"graded {o.grade}", o.condition, len(offers) > 1 and f"+{len(offers) - 1} more"]
+    note = " · ".join(n for n in notes if n)
+    classes = "price" + (" guide" if guide else "") + (" best" if best else "")
+    return (f'<td class="{classes}"><a href="{esc(o.url)}" title="{esc(o.title)}" target="_blank" '
+            f'rel="noopener">{"from " if guide else ""}{esc(shown)}</a>'
+            f'{f"<small>{esc(note)}</small>" if note else ""}</td>')
+
+
+def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
+    """A table with one row per missing card and one column per marketplace.
+    Each cell is that marketplace's cheapest copy, linked to the listing; the
+    cheapest listing for the card is highlighted. Price-guide marketplaces get
+    their own columns as "from" prices and are never highlighted."""
+    esc = html.escape
+    columns = ([(p, False) for p in plugins if not p.price_guide]
+               + [(p, True) for p in plugins if p.price_guide])
+    head = "".join(f"<th>{esc(p.name)}{' (price guide)' if g else ''}</th>" for p, g in columns)
+    body, grand_found, grand_cards, grand_total = [], 0, 0, Decimal(0)
+    for gi, (set_entry, cards) in enumerate(groups):
+        rows, found, total = [], 0, Decimal(0)
+        for c in cards:
+            listed = listing_ranked[(gi, c.card_id)] if listing_ranked else []
+            guided = guide_ranked[(gi, c.card_id)] if guide_ranked else []
+            if listed:
+                found += 1
+                total += listed[0][0] or 0
+            best_id = listed[0][1].marketplace if listed and listed[0][0] is not None else None
+            cells = []
+            for p, g in columns:
+                mine = [po for po in (guided if g else listed) if po[1].marketplace == p.id]
+                cells.append(_html_cell(mine, currency, guide=g, best=not g and p.id == best_id))
+            rows.append(f'<tr class="{"sold" if listed else "unsold"}"><td class="num">'
+                        f'#{esc(c.local_id)}</td><td>{esc(c.name)}</td>{"".join(cells)}</tr>')
+        grand_found += found
+        grand_cards += len(cards)
+        grand_total += total
+        body.append(f'<tr class="set"><th colspan="{2 + len(columns)}">'
+                    f'{esc(set_entry["set_name"])} <span>{esc(set_entry["set_id"])} · '
+                    f'{esc(set_entry["language"])} · {found}/{len(cards)} for sale, cheapest of '
+                    f'each {esc(_money(total, currency))}</span></th></tr>')
+        body.extend(rows)
+    guide_note = (" Price-guide columns show the cheapest copy that site lists in any language "
+                  "or condition; they aren't listings and don't count towards the totals."
+                  if any(g for _, g in columns) else "")
+    doc = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Missing card prices</title>
+<style>{HTML_STYLE}</style>
+</head>
+<body>
+<h1>Missing card prices</h1>
+<p>{grand_found}/{grand_cards} missing card(s) for sale; buying the cheapest of each comes to
+{esc(_money(grand_total, currency))} before shipping. The cheapest listing for each card is
+highlighted; click a price to open the listing.{guide_note}</p>
+<p>Generated {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}.</p>
+<label><input type="checkbox" id="only"> Only show cards that are for sale</label>
+<div class="wrap"><table>
+<thead><tr><th>#</th><th>Card</th>{head}</tr></thead>
+<tbody>
+{chr(10).join(body)}
+</tbody>
+</table></div>
+<script>
+document.getElementById("only").addEventListener("change", function (e) {{
+  document.body.classList.toggle("for-sale-only", e.target.checked);
+}});
+</script>
+</body>
+</html>
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(doc)
+
+
 def list_marketplaces(available, environ=os.environ):
     if not available:
         print("No marketplace plugins installed yet (add one to marketplaces/).")
@@ -303,6 +426,10 @@ def build_arg_parser():
                    help="CSV for prices from price-guide marketplaces such as Cardmarket, which "
                         "publish one price per card rather than listings and are kept apart from "
                         "the offers (default: %(default)s).")
+    p.add_argument("--html-out", metavar="FILE",
+                   help="HTML table to write, one row per missing card and one column per "
+                        "marketplace, each price linking to its listing (default: "
+                        "price_table.html next to --out).")
     p.add_argument("--cheapest-only", action="store_true",
                    help="Write only the cheapest offer per card instead of every offer.")
     p.add_argument("--include-uncertain", action="store_true",
@@ -351,19 +478,22 @@ def main(argv=None):
     rates = exchange_rates({o.currency.upper() for _, o in offers}, currency)
     listings = {pid: r for pid, r in plugin_results.items() if pid not in guide_ids}
     guides = {pid: r for pid, r in plugin_results.items() if pid in guide_ids}
+    listing_ranked = guide_ranked = None
     if listings or not guides:
-        ranked = rank_offers(groups, [pair for found, _ in listings.values() for pair in found],
-                             rates, args.include_uncertain)
-        print_report(groups, ranked, currency, listings, skipped)
-        rows = write_csv(groups, ranked, currency, args.out, args.cheapest_only)
+        listing_ranked = rank_offers(groups, [pair for found, _ in listings.values() for pair in found],
+                                     rates, args.include_uncertain)
+        print_report(groups, listing_ranked, currency, listings, skipped)
+        rows = write_csv(groups, listing_ranked, currency, args.out, args.cheapest_only)
         print(f"Wrote {rows} offer(s) to {os.path.abspath(args.out)}")
     if guides:
-        ranked = rank_offers(groups, [pair for found, _ in guides.values() for pair in found],
-                             rates, args.include_uncertain)
-        print_guide_report(groups, ranked, currency, guides)
-        rows = write_csv(groups, ranked, currency, args.guide_out)
+        guide_ranked = rank_offers(groups, [pair for found, _ in guides.values() for pair in found],
+                                   rates, args.include_uncertain)
+        print_guide_report(groups, guide_ranked, currency, guides)
+        rows = write_csv(groups, guide_ranked, currency, args.guide_out)
         print(f"Wrote {rows} price guide price(s) to {os.path.abspath(args.guide_out)}")
-
+    html_out = args.html_out or os.path.join(os.path.dirname(args.out), "price_table.html")
+    write_html(groups, listing_ranked, guide_ranked, plugins, currency, html_out)
+    print(f"Wrote the price table to {os.path.abspath(html_out)}")
 
 if __name__ == "__main__":
     main()

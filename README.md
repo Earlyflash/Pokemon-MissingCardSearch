@@ -52,7 +52,7 @@ It prints a per-set report and writes every missing card to
 
 ```
 MEGA Dream ex [M2a, Japanese]: own <owned>/<total> (<pct>%), missing <n>
-  #002      フシギソウ
+  #002      フシギソウ (Ivysaur)
   ...
 ```
 
@@ -64,6 +64,15 @@ MEGA Dream ex [M2a, Japanese]: own <owned>/<total> (<pct>%), missing <n>
 | Card Number | TCGdex's card number within the set |
 | Card Name | TCGdex's card name (in that language's dataset) |
 | TCGdex Card ID | Stable id, handy for the next step (marketplace search) |
+| English Name | The card's English name, also for Japanese/Chinese/Korean cards (blank if unknown) |
+
+TCGdex only has Japanese names for Japanese cards, so English names come
+from Cardmarket, which lists every card in English: each card's Cardmarket
+product id comes from TCGdex, and its name from Cardmarket's free daily
+product list (about 14 MB, downloaded once per run), plus one TCGdex request
+per missing card. Cards TCGdex hasn't linked to a Cardmarket product yet,
+usually from very new sets, are left blank. `--no-english-names` skips all of
+this.
 
 `--json FILE` writes the same data grouped by set, plus any sets it couldn't
 match, for other tools to consume:
@@ -76,7 +85,7 @@ match, for other tools to consume:
     "tcgdex_lang": "ja", "total": 250, "owned": 200, "percent_complete": 80.0,
     "missing": [{
       "card_id": "M2a-002", "set_id": "M2a", "set_name": "MEGA Dream ex",
-      "local_id": "002", "name": "フシギソウ", "language": "Japanese",
+      "local_id": "002", "name": "フシギソウ", "name_en": "Ivysaur", "language": "Japanese",
       "tcgdex_lang": "ja", "rarity": null, "finish": null
     }]
   }],
@@ -102,6 +111,7 @@ include them, and fetching rarity costs one request per card.
 | `--min-complete PERCENT` | Only list sets you already own at least this much of (default `75`). `0` lists every set you own a card from. |
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
+| `--no-english-names` | Don't look up English names for non-English cards. |
 
 ## Pricing the missing cards
 
@@ -130,6 +140,15 @@ prices are printed in their own section after the offers, are never ranked
 against real listings or counted in the totals, and go to their own CSV,
 `price_guide.csv` (same columns as `offers.csv`).
 
+It also writes `price_table.html` (next to `offers.csv`), the easiest way to
+read the results: open it in a browser for one row per missing card, grouped
+by set, and one column per marketplace. Each cell is that marketplace's
+cheapest copy (with its condition or grade, and how many more copies it has),
+and the price links straight to the listing. The cheapest listing for each
+card is highlighted. Price-guide marketplaces such as Cardmarket get their own
+columns as "from" prices and are never highlighted. A checkbox hides the cards
+nobody has for sale.
+
 | Flag | Meaning |
 |---|---|
 | `--marketplace ID` | Only search this marketplace (repeatable). Default: every marketplace whose settings are present. |
@@ -138,6 +157,7 @@ against real listings or counted in the totals, and go to their own CSV,
 | `--currency CODE` | Currency to compare in (default `GBP`), converted with the same free rate service RareCandyExporter uses. |
 | `--out FILE` | Where to write the offers (default `offers.csv`). |
 | `--guide-out FILE` | Where to write price-guide prices, e.g. Cardmarket's (default `price_guide.csv`). |
+| `--html-out FILE` | Where to write the HTML price table (default `price_table.html` next to `--out`). |
 | `--cheapest-only` | Write only the cheapest offer per card. |
 | `--include-uncertain` | Also count offers a marketplace isn't sure are the right print. |
 | `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached for 6 hours in `.price_cache/`. |
@@ -150,6 +170,7 @@ against real listings or counted in the totals, and go to their own CSV,
 | `deckdhq` | [DeckdHQ](https://www.deckdhq.com), UK, GBP | Reads every active Pokémon listing from the site's public API once per run (about 11 requests). Listings with a set name match on set, card number and language (`exact`). eBay imports have no set name, so they match on the set name appearing in the title plus the number (`likely`), as do listings with no language. Promo listings match across DeckdHQ's various promo set names only when the number carries the card's set prefix (`SWSH277`, `SVP 176`) or the set name names the same promo series (e.g. "Scarlet & Violet Black Star Promos" for SVP); numbers like `063/SV-P` are Japanese promos and never match English promo sets, and Celebrations Classic Collection cards match on name because sellers use the original print numbers. A set code in the set name (`s12a VSTAR Universe`) outweighs a contradicting language tag. Prices include DeckdHQ's buyer fee. |
 | `cardcargo` | [CardCargo](https://cardcargo.com), UK, GBP. Japanese cards only. | Reads the shop's whole Japanese singles collection from its public Shopify product JSON once per run (two requests for its ~400 products). Titles all look like `(#173/165) Pikachu - Holo [SV2a: Pokemon Card 151 (JPN)]`, so a card matches (`exact`) on its number plus the set name, with or without the code prefix, or a code prefix equal to its TCGdex set id; promo numbers like `152/S-P` match on the promo code instead. Vintage listings numbered `NO. 008` carry a Pokédex number, not a card number, so they never match. Each copy in stock is its own offer with its own condition, linked straight to that copy. |
 | `radams` | [Radam's Poké Stop](https://www.radamspokestop.co.uk), UK, GBP. English, Japanese, Korean and Chinese cards. | Reads the whole shop from its ordinary "shop all" pages once per run (about 10 requests for its ~2,000 products; the shop's robots.txt disallows Squarespace's JSON view, so the plugin doesn't use it). Each product carries language and set tags, so a card matches (`exact`) on language, the `#` number in the title, and its set: a set code in the title or set tag (`sv2a`, `cs4aC`) equal to its TCGdex set id, a promo code after the number (`001/SM-p`), or for English sets the set tag naming the set (`swsh-evolving-skies`). Titles are hand-written, so a listing whose URL gives a different number than its title, or an English listing whose title doesn't name the card, is only `uncertain`. Matched products in stock are opened one by one for their copies: each condition in stock is its own offer, with sale prices applied. Korean and most Chinese sets rarely match because TCGdex has few of their card lists. |
+| `japan2uk` | [Japan2UK](https://www.japan2uk.com), UK, GBP. Japanese cards only. | Reads the shop's whole Japanese singles and Japanese graded cards collections from its public Shopify product JSON once per run (about 88 requests for ~21,500 products, most of them sold out, so a run spends about a minute and a half here). Titles end in the set code and number, like `Pokemon Jolteon Reverse Holo Pokemon 151 sv2a 135/165 Japanese Single Card`, so a card matches (`exact`) on its number plus a set code equal to its TCGdex set id; promo numbers like `237/SV-P` match on the promo code instead, and a few XY-era codes are mapped to TCGdex's (`xy11 Bb` is XY11a, `XY1` Collection X is XY1a). Graded copies are labelled with their grade (`PSA 10`); vintage graded listings with no set code never match. Every print of a number (normal, reverse holo, Master Ball) is offered for that card, with the print in the title. |
 | `cardmarket` | [Cardmarket](https://www.cardmarket.com), EU, EUR. **Price guide, not listings.** | Cardmarket's site blocks automated reads and its API takes no new users, so this reads the price guide Cardmarket publishes as a free daily download (one ~15 MB file per run). The price is its `low`: the cheapest copy currently listed, in any language or condition and from any seller country, so an English near-mint copy shipped to the UK may cost more. Cards are tied to Cardmarket products through TCGdex, whose card records carry the Cardmarket product id (one TCGdex request per missing card), and link to the card's Cardmarket page. |
 
 ### Adding a marketplace
