@@ -336,33 +336,47 @@ CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥"}
 
 HTML_STYLE = """
 :root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d9d9de; --head: #f2f2f5;
-        --set: #e6ecf5; --best: #d4f5dc; --best-fg: #0b5d1e; --link: #0a58ca; }
+        --set: #e6ecf5; --best: #d4f5dc; --best-fg: #0b5d1e; --link: #0a58ca;
+        --over: #b3261e; --under: #0b6b2e; }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #151517; --fg: #ececf0; --muted: #9a9aa2; --line: #34343a; --head: #202024;
-          --set: #1f2a3a; --best: #174a26; --best-fg: #b8f0c6; --link: #7fb2ff; }
+          --set: #1f2a3a; --best: #174a26; --best-fg: #b8f0c6; --link: #7fb2ff;
+          --over: #ff8a80; --under: #7ee2a0; }
 }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
-       font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+       font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
 h1 { font-size: 20px; margin: 0 0 4px; }
 p { margin: 4px 0; color: var(--muted); }
 label { display: inline-block; margin: 8px 0 12px; }
 table { border-collapse: collapse; min-width: 100%; }
-th, td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left;
+th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left;
          vertical-align: top; }
-thead th { position: sticky; top: 0; z-index: 1; background: var(--head); white-space: nowrap;
-           box-shadow: inset 0 -1px var(--line); }
+thead th { position: sticky; top: 0; z-index: 1; background: var(--head); vertical-align: bottom;
+           box-shadow: inset 0 -1px var(--line); max-width: 7em; font-size: 12px; }
+thead th small { font-weight: normal; }
+td.card { min-width: 9em; max-width: 14em; }
 tfoot th, tfoot td { background: var(--head); font-weight: 600; border-top: 2px solid var(--line); }
 tfoot small { font-weight: normal; }
 tr.set th { background: var(--set); font-weight: 600; }
+tr.set th div { display: inline-block; position: sticky; left: 6px; }
+.stick { position: sticky; z-index: 1; background: var(--bg); }
+.stick.edge { box-shadow: inset -1px 0 var(--line); }
+thead th.stick { z-index: 3; background: var(--head); }
+tfoot .stick { background: var(--head); }
+thead th.stick.edge { box-shadow: inset -1px 0 var(--line), inset 0 -1px var(--line); }
+td.guide.market, td.guide.market a { color: var(--fg); font-weight: 700; }
 tr.set th span { font-weight: normal; color: var(--muted); }
 td.num { white-space: nowrap; color: var(--muted); }
 td.price { white-space: nowrap; }
+td.price small { white-space: normal; max-width: 7em; }
 td.best { background: var(--best); }
 td.best a { color: var(--best-fg); font-weight: 600; }
 td.guide, td.guide a { color: var(--muted); }
+span.over { color: var(--over); font-weight: 600; font-size: 11px; }
+span.under { color: var(--under); font-weight: 600; font-size: 11px; }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
-small { display: block; color: var(--muted); }
+small { display: block; color: var(--muted); font-size: 11px; }
 body.for-sale-only tr.unsold { display: none; }
 """
 
@@ -371,33 +385,62 @@ def _money(amount, currency):
     return f"{CURRENCY_SYMBOLS.get(currency, currency + ' ')}{amount:.2f}"
 
 
-def _html_cell(offers, currency, guide=False, best=False, prefix="from "):
-    """One marketplace's cell for one card: its cheapest offer, linked."""
+def _html_cell(offers, currency, guide=False, best=False, prefix="from ", market=None, extra=""):
+    """One marketplace's cell for one card: its cheapest offer, linked. A
+    listing priced above `market` (the card's market price, if known) gets a
+    ▲ and how far over it is beside its price, one below it a ▼ and how far
+    under; the cell's colour doesn't change, so the cheapest-listing
+    highlight still shows. Kept short so the table stays narrow."""
     esc = html.escape
     if not offers:
-        return '<td class="price"></td>'
+        return f'<td class="{("price " + extra).strip()}"></td>'
     price, o = offers[0]
     shown = _money(price, currency) if price is not None else f"{o.currency} {o.price}"
-    notes = [o.grade and f"graded {o.grade}", o.condition, len(offers) > 1 and f"+{len(offers) - 1} more"]
+    side = None
+    if not guide and market and price is not None and price != market:
+        side = "over" if price > market else "under"
+    more = len(offers) - 1
+    notes = [o.grade, o.condition, more and f"+{more}"]
     note = " · ".join(n for n in notes if n)
-    classes = "price" + (" guide" if guide else "") + (" best" if best else "")
+    note_title = " · ".join(n for n in [o.grade and f"graded {o.grade}", o.condition,
+                                        more and f"{more} more listing(s)"] if n)
+    marker = ""
+    if side:
+        arrow, word = ("▲", "above") if side == "over" else ("▼", "below")
+        pct = int((abs(price - market) / market * 100).quantize(Decimal(1), ROUND_HALF_UP))
+        marker = (f' <span class="{side}" title="{pct}% ({esc(_money(abs(price - market), currency))}) '
+                  f'{word} the {esc(_money(market, currency))} market price">{arrow}{pct}%</span>')
+    classes = ("price" + (" guide" if guide else "") + (" best" if best else "")
+               + (f" {side}" if side else "") + (f" {extra}" if extra else ""))
     return (f'<td class="{classes}"><a href="{esc(o.url)}" title="{esc(o.title)}" target="_blank" '
-            f'rel="noopener">{prefix if guide else ""}{esc(shown)}</a>'
-            f'{f"<small>{esc(note)}</small>" if note else ""}</td>')
+            f'rel="noopener">{prefix if guide else ""}{esc(shown)}</a>{marker}'
+            f'{f"<small title={chr(34)}{esc(note_title)}{chr(34)}>{esc(note)}</small>" if note else ""}</td>')
 
 
 def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
     """A table with one row per missing card and one column per marketplace.
     Each cell is that marketplace's cheapest copy, linked to the listing; the
     cheapest listing for the card is highlighted. Price-guide marketplaces get
-    their own columns as "from" prices and are never highlighted."""
+    their own columns, before the shops, as "from" prices and are never
+    highlighted. A market price guide (e.g. PulseAPI) comes first, straight
+    after the card name, in bold, and stays in view with the card number and
+    name when scrolling sideways."""
     esc = html.escape
-    columns = ([(p, False) for p in plugins if not p.price_guide]
-               + [(p, True) for p in plugins if p.price_guide])
-    head = "".join(f"<th>{esc(p.name)}{f' ({esc(p.guide_label)})' if g else ''}</th>"
+    market_cols = [(p, True) for p in plugins if p.price_guide and p.market_reference]
+    columns = (market_cols
+               + [(p, True) for p in plugins if p.price_guide and not p.market_reference]
+               + [(p, False) for p in plugins if not p.price_guide])
+    # Classes for the columns that stay put when scrolling sideways: the
+    # number, the card and any market price columns; the last gets an edge.
+    sticky = ["stick"] * (2 + len(market_cols))
+    sticky[-1] += " edge"
+    col_class = {p.id: sticky[2 + i] + " market" for i, (p, _) in enumerate(market_cols)}
+    head = "".join(f'<th{f" class={chr(34)}{col_class[p.id]}{chr(34)}" if p.id in col_class else ""}>'
+                   f"{esc(p.name)}{f'<small>{esc(p.guide_label)}</small>' if g else ''}</th>"
                    for p, g in columns)
     body, grand_found, grand_cards, grand_total = [], 0, 0, Decimal(0)
     shop_totals = {p.id: [Decimal(0), 0] for p, _ in columns}  # [sum of cheapest copies, cards]
+    market_ids = {p.id for p, g in columns if g and p.market_reference}
     for gi, (set_entry, cards) in enumerate(groups):
         rows, found, total = [], 0, Decimal(0)
         for c in cards:
@@ -407,6 +450,8 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                 found += 1
                 total += listed[0][0] or 0
             best_id = listed[0][1].marketplace if listed and listed[0][0] is not None else None
+            market = next((po[0] for po in guided if po[0] is not None
+                           and po[1].marketplace in market_ids), None)
             cells = []
             for p, g in columns:
                 mine = [po for po in (guided if g else listed) if po[1].marketplace == p.id]
@@ -414,25 +459,30 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                     shop_totals[p.id][0] += mine[0][0]
                     shop_totals[p.id][1] += 1
                 cells.append(_html_cell(mine, currency, guide=g, best=not g and p.id == best_id,
-                                        prefix=p.guide_prefix))
+                                        prefix=p.guide_prefix, market=market,
+                                        extra=col_class.get(p.id, "")))
             if c.name_en and c.name_en != c.name:
                 card = f'{esc(c.name_en)}<small>{esc(c.name)}</small>'
             else:
                 card = esc(c.name)
-            rows.append(f'<tr class="{"sold" if listed else "unsold"}"><td class="num">'
-                        f'#{esc(c.local_id)}</td><td>{card}</td>{"".join(cells)}</tr>')
+            rows.append(f'<tr class="{"sold" if listed else "unsold"}"><td class="num {sticky[0]}">'
+                        f'#{esc(c.local_id)}</td><td class="card {sticky[1]}">{card}</td>'
+                        f'{"".join(cells)}</tr>')
         grand_found += found
         grand_cards += len(cards)
         grand_total += total
-        body.append(f'<tr class="set"><th colspan="{2 + len(columns)}">'
+        body.append(f'<tr class="set"><th colspan="{2 + len(columns)}"><div>'
                     f'{esc(set_entry["set_name"])} <span>{esc(set_entry["set_id"])} · '
                     f'{esc(set_entry["language"])} · {found}/{len(cards)} for sale, cheapest of '
-                    f'each {esc(_money(total, currency))}</span></th></tr>')
+                    f'each {esc(_money(total, currency))}</span></div></th></tr>')
         body.extend(rows)
     foot = "".join(
-        f'<td class="price{" guide" if g else ""}">{esc(p.guide_prefix) if g else ""}'
+        f'<td class="{" ".join(filter(None, ["price", g and "guide", col_class.get(p.id)]))}">'
+        f'{esc(p.guide_prefix) if g else ""}'
         f'{esc(_money(shop_totals[p.id][0], currency))}'
         f'<small>{shop_totals[p.id][1]} card(s)</small></td>' for p, g in columns)
+    over_note = "".join(f" A ▲ marks a listing priced above {p.name}'s market price, a ▼ one "
+                        f"below it." for p, g in columns if g and p.market_reference)
     guide_note = "".join(f" {p.name} shows {p.guide_description}." for p, g in columns if g)
     if guide_note:
         guide_note += (" Those price-guide columns aren't listings and don't count towards "
@@ -449,20 +499,32 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
 <h1>Missing card prices</h1>
 <p>{grand_found}/{grand_cards} missing card(s) for sale; buying the cheapest of each comes to
 {esc(_money(grand_total, currency))} before shipping. The cheapest listing for each card is
-highlighted; click a price to open the listing.{guide_note}</p>
+highlighted; click a price to open the listing.{over_note}{guide_note}</p>
 <p>Generated {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}.</p>
 <label><input type="checkbox" id="only"> Only show cards that are for sale</label>
 <table>
-<thead><tr><th>#</th><th>Card</th>{head}</tr></thead>
+<thead><tr><th class="{sticky[0]}">#</th><th class="{sticky[1]}">Card</th>{head}</tr></thead>
 <tbody>
 {chr(10).join(body)}
 </tbody>
-<tfoot><tr><th colspan="2">Total per shop<small>cheapest copy of each card it has</small></th>{foot}</tr></tfoot>
+<tfoot><tr><th colspan="2" class="{sticky[0]}">Total per shop<small>cheapest copy of each card it has</small></th>{foot}</tr></tfoot>
 </table>
 <script>
 document.getElementById("only").addEventListener("change", function (e) {{
   document.body.classList.toggle("for-sale-only", e.target.checked);
 }});
+// Line the sticky columns up side by side: each sits right of the ones before it.
+(function () {{
+  var heads = document.querySelectorAll("thead th.stick"), left = 0, lefts = [];
+  heads.forEach(function (th) {{ lefts.push(left); left += th.offsetWidth; }});
+  document.querySelectorAll("tr").forEach(function (tr) {{
+    var i = 0;
+    tr.querySelectorAll(".stick").forEach(function (cell) {{
+      cell.style.left = lefts[i] + "px";
+      i += cell.colSpan || 1;
+    }});
+  }});
+}})();
 </script>
 </body>
 </html>

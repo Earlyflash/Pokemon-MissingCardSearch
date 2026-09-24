@@ -446,30 +446,71 @@ class HtmlTableTests(unittest.TestCase):
         self.assertEqual((eu_cls, eu_url, eu_text), ("price best", "https://shop.example/M2a-002",
                                                      "£1.28"))
         # Japan Shop's cheapest copy of two, with its condition and the other copy counted.
-        self.assertEqual((jp_cls, jp_text), ("price", "£1.50LP · +1 more"))
+        self.assertEqual((jp_cls, jp_text), ("price", "£1.50LP · +1"))
         # No Euro Shop copy of #003: an empty cell.
         self.assertEqual(t.rows["#003"][0], ("price", None, ""))
 
     def test_price_guide_gets_its_own_from_column_never_highlighted(self):
         t = self.table({"euroshop": EuroShop(), "guide": PriceGuide()})
-        self.assertEqual(t.headers, ["#", "Card", "Euro Shop", "Price Guide (price guide)"])
+        # Price guides come before the shops.
+        self.assertEqual(t.headers, ["#", "Card", "Price Guide", "price guide", "Euro Shop"])
         # The guide's 0.04 is cheaper than Euro Shop's 0.17, but Euro Shop stays highlighted.
-        self.assertEqual([c[0] for c in t.rows["#001"]], ["price best", "price guide"])
-        self.assertEqual(t.rows["#001"][1][2], "from £0.04")
+        self.assertEqual([c[0] for c in t.rows["#001"]], ["price guide", "price best"])
+        self.assertEqual(t.rows["#001"][0][2], "from £0.04")
 
     def test_price_guide_can_name_its_own_prices(self):
         guide = PriceGuide()
         guide.guide_label, guide.guide_prefix = "market price", ""
         t = self.table({"euroshop": EuroShop(), "guide": guide})
-        self.assertEqual(t.headers[-1], "Price Guide (market price)")
-        self.assertEqual(t.rows["#001"][1][2], "£0.04")
-        self.assertEqual(t.foot[-1][2], "£34.042 card(s)")
+        self.assertEqual(t.headers[2:4], ["Price Guide", "market price"])
+        self.assertEqual(t.rows["#001"][0][2], "£0.04")
+        self.assertEqual(t.foot[0][2], "£34.042 card(s)")
+
+    def test_listings_above_a_market_price_are_marked_without_recolouring(self):
+        guide = PriceGuide()
+        guide.market_reference = True
+        t = self.table({"euroshop": EuroShop(), "jpshop": JapanShop(), "guide": guide})
+        # The market price column comes first, bold and sticky.
+        self.assertEqual(t.headers[2:4], ["Price Guide", "price guide"])
+        self.assertEqual(t.rows["#001"][0][0], "price guide stick edge market")
+        # #001: Euro Shop's £0.17 is the cheapest listing but above the £0.04
+        # market price, so it keeps its highlight and gains the marker.
+        euro = t.rows["#001"][1]
+        self.assertEqual(euro[0], "price best over")
+        self.assertEqual(euro[2], "£0.17 ▲325%NM")
+        # #003: Japan Shop's £45.00 is above the £34.00 market price.
+        self.assertIn("over", t.rows["#003"][2][0])
+        self.assertIn("▲32%", t.rows["#003"][2][2])
+        # #002 has no market price, so nothing is marked.
+        self.assertFalse(any("over" in c[0] or "under" in c[0] for c in t.rows["#002"]))
+
+    def test_listings_below_a_market_price_are_marked_too(self):
+        guide = PriceGuide()
+        guide.market_reference = True
+        # Japan Shop's cheapest #002 is ¥300 = £1.50; a 40 EUR (£34.00) market price is above it.
+        guide.search = lambda card, ctx: offers_from({"M2a-002": [("40", "EUR", None)]}, card)
+        t = self.table({"jpshop": JapanShop(), "guide": guide})
+        cls, _, text = t.rows["#002"][1]
+        self.assertIn("under", cls)
+        self.assertNotIn("over", cls)
+        self.assertEqual(text, "£1.50 ▼96%LP · +1")
+
+    def test_no_marker_without_a_market_price_guide(self):
+        t = self.table({"euroshop": EuroShop(), "guide": PriceGuide()})
+        self.assertEqual(t.rows["#001"][1][0], "price best")
+
+    def test_market_price_comes_first_then_other_price_guides_then_shops(self):
+        market, other = PriceGuide(), PriceGuide()
+        market.id, market.name, market.market_reference = "market", "Market", True
+        t = self.table({"euroshop": EuroShop(), "guide": other, "market": market})
+        self.assertEqual([h for h in t.headers if h != "price guide"],
+                         ["#", "Card", "Market", "Price Guide", "Euro Shop"])
 
     def test_totals_row_sums_each_shops_cheapest_copies(self):
         t = self.table({"jpshop": JapanShop(), "euroshop": EuroShop(), "guide": PriceGuide()})
         # Euro Shop: 1.28 + 0.17; Japan Shop: 1.50 (cheapest of two) + 45.00; guide: 34.00 + 0.04.
-        self.assertEqual([c[2] for c in t.foot], ["£1.452 card(s)", "£46.502 card(s)",
-                                                  "from £34.042 card(s)"])
+        self.assertEqual([c[2] for c in t.foot], ["from £34.042 card(s)", "£1.452 card(s)",
+                                                  "£46.502 card(s)"])
 
     def test_english_name_shown_above_the_printed_name(self):
         missing = json.loads(json.dumps(MISSING))

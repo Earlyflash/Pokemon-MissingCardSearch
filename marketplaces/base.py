@@ -90,6 +90,9 @@ class Marketplace:
     guide_label = "price guide"
     guide_prefix = "from "
     guide_description = "the cheapest copy it lists, in any language or condition"
+    # True for a price guide whose price is a card's market value (not a
+    # cheapest copy), so the price table flags listings priced above it.
+    market_reference = False
 
     def search(self, card, ctx):
         """Return a list of Offers for one MissingCard."""
