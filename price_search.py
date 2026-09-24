@@ -62,6 +62,7 @@ def read_missing_csv(f):
             "card_id": row["TCGdex Card ID"], "set_id": set_id, "set_name": set_name,
             "local_id": row["Card Number"], "name": row["Card Name"],
             "language": language, "tcgdex_lang": entry["tcgdex_lang"],
+            "name_en": row.get("English Name") or None,
         })
     return {"sets": list(sets.values())}
 
@@ -307,11 +308,13 @@ body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
 h1 { font-size: 20px; margin: 0 0 4px; }
 p { margin: 4px 0; color: var(--muted); }
 label { display: inline-block; margin: 8px 0 12px; }
-.wrap { overflow-x: auto; }
 table { border-collapse: collapse; min-width: 100%; }
 th, td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left;
          vertical-align: top; }
-thead th { position: sticky; top: 0; background: var(--head); white-space: nowrap; }
+thead th { position: sticky; top: 0; z-index: 1; background: var(--head); white-space: nowrap;
+           box-shadow: inset 0 -1px var(--line); }
+tfoot th, tfoot td { background: var(--head); font-weight: 600; border-top: 2px solid var(--line); }
+tfoot small { font-weight: normal; }
 tr.set th { background: var(--set); font-weight: 600; }
 tr.set th span { font-weight: normal; color: var(--muted); }
 td.num { white-space: nowrap; color: var(--muted); }
@@ -355,6 +358,7 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                + [(p, True) for p in plugins if p.price_guide])
     head = "".join(f"<th>{esc(p.name)}{' (price guide)' if g else ''}</th>" for p, g in columns)
     body, grand_found, grand_cards, grand_total = [], 0, 0, Decimal(0)
+    shop_totals = {p.id: [Decimal(0), 0] for p, _ in columns}  # [sum of cheapest copies, cards]
     for gi, (set_entry, cards) in enumerate(groups):
         rows, found, total = [], 0, Decimal(0)
         for c in cards:
@@ -367,9 +371,16 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
             cells = []
             for p, g in columns:
                 mine = [po for po in (guided if g else listed) if po[1].marketplace == p.id]
+                if mine and mine[0][0] is not None:
+                    shop_totals[p.id][0] += mine[0][0]
+                    shop_totals[p.id][1] += 1
                 cells.append(_html_cell(mine, currency, guide=g, best=not g and p.id == best_id))
+            if c.name_en and c.name_en != c.name:
+                card = f'{esc(c.name_en)}<small>{esc(c.name)}</small>'
+            else:
+                card = esc(c.name)
             rows.append(f'<tr class="{"sold" if listed else "unsold"}"><td class="num">'
-                        f'#{esc(c.local_id)}</td><td>{esc(c.name)}</td>{"".join(cells)}</tr>')
+                        f'#{esc(c.local_id)}</td><td>{card}</td>{"".join(cells)}</tr>')
         grand_found += found
         grand_cards += len(cards)
         grand_total += total
@@ -378,6 +389,10 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                     f'{esc(set_entry["language"])} · {found}/{len(cards)} for sale, cheapest of '
                     f'each {esc(_money(total, currency))}</span></th></tr>')
         body.extend(rows)
+    foot = "".join(
+        f'<td class="price{" guide" if g else ""}">{"from " if g else ""}'
+        f'{esc(_money(shop_totals[p.id][0], currency))}'
+        f'<small>{shop_totals[p.id][1]} card(s)</small></td>' for p, g in columns)
     guide_note = (" Price-guide columns show the cheapest copy that site lists in any language "
                   "or condition; they aren't listings and don't count towards the totals."
                   if any(g for _, g in columns) else "")
@@ -396,12 +411,13 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
 highlighted; click a price to open the listing.{guide_note}</p>
 <p>Generated {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}.</p>
 <label><input type="checkbox" id="only"> Only show cards that are for sale</label>
-<div class="wrap"><table>
+<table>
 <thead><tr><th>#</th><th>Card</th>{head}</tr></thead>
 <tbody>
 {chr(10).join(body)}
 </tbody>
-</table></div>
+<tfoot><tr><th colspan="2">Total per shop<small>cheapest copy of each card it has</small></th>{foot}</tr></tfoot>
+</table>
 <script>
 document.getElementById("only").addEventListener("change", function (e) {{
   document.body.classList.toggle("for-sale-only", e.target.checked);

@@ -45,6 +45,7 @@ class MissingCard:
     tcgdex_lang: str           # TCGdex dataset code, e.g. "ja"
     rarity: Optional[str] = None
     finish: Optional[str] = None
+    name_en: Optional[str] = None    # English name, when missing_cards.py could find one
 
     @classmethod
     def from_json(cls, d):

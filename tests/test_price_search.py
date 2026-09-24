@@ -136,6 +136,14 @@ class LoadMissingCsvTests(unittest.TestCase):
         self.assertEqual([(s["set_id"], s["language"]) for s, _ in from_csv],
                          [("M2a", "Japanese"), ("me01", "English")])
 
+    def test_english_name_column_is_read(self):
+        path = self.write_csv(
+            "Set Name,TCGdex Set,Language,Card Number,Card Name,TCGdex Card ID,English Name\r\n"
+            "MEGA Dream ex,M2a,Japanese,002,フシギソウ,M2a-002,Ivysaur\r\n"
+            "MEGA Dream ex,M2a,Japanese,003,メガフシギバナex,M2a-003,\r\n")
+        cards = price_search.load_missing(path)[0][1]
+        self.assertEqual([c.name_en for c in cards], ["Ivysaur", None])
+
     def test_other_csv_gives_a_clear_error(self):
         path = self.write_csv("Product Name,Set Name\r\nPikachu,Base Set\r\n")
         with self.assertRaises(SystemExit) as e:
@@ -274,7 +282,7 @@ class RankingTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
-    def run_main(self, *extra, plugins=None, guide_csv=None, html_out=None):
+    def run_main(self, *extra, plugins=None, guide_csv=None, html_out=None, missing=MISSING):
         out_csv = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
         html_out = html_out or tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
         guide_csv = guide_csv or tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
@@ -284,7 +292,7 @@ class MainTests(unittest.TestCase):
                 patch.dict(os.environ, {}, clear=False), redirect_stdout(io.StringIO()) as out, \
                 redirect_stderr(io.StringIO()) as err:
             os.environ.pop("KEYED_SHOP_TOKEN", None)
-            price_search.main([write_json(MISSING), "--out", out_csv, "--guide-out", guide_csv,
+            price_search.main([write_json(missing), "--out", out_csv, "--guide-out", guide_csv,
                                "--html-out", html_out, "--no-cache", *extra])
         self.progress = err.getvalue()
         with open(out_csv, encoding="utf-8") as f:
@@ -353,16 +361,20 @@ class HtmlTableTests(unittest.TestCase):
     """The HTML price table: a row per missing card, a column per marketplace."""
 
     class Cells(html.parser.HTMLParser):
-        """{card number: [(cell classes, link, text), ...]} from the table body."""
+        """{card number: [(cell classes, link, text), ...]} from the table body,
+        the card column's text by number, and the totals row's shop cells."""
 
         def __init__(self):
             super().__init__()
             self.rows, self.row, self.cell, self.headers, self.in_head = {}, None, None, [], False
+            self.names, self.foot, self.in_foot = {}, None, False
 
         def handle_starttag(self, tag, attrs):
             a = dict(attrs)
             if tag == "thead":
                 self.in_head = True
+            elif tag == "tfoot":
+                self.in_foot = True
             elif tag == "tr" and not self.in_head and "set" not in a.get("class", ""):
                 self.row = []
             elif tag == "td" and self.row is not None:
@@ -376,8 +388,12 @@ class HtmlTableTests(unittest.TestCase):
             elif tag == "td" and self.cell is not None:
                 self.row.append(tuple(self.cell))
                 self.cell = None
+            elif tag == "tr" and self.row and self.in_foot:
+                self.foot = self.row
+                self.row = None
             elif tag == "tr" and self.row:
                 self.rows[self.row[0][2]] = self.row[2:]
+                self.names[self.row[0][2]] = self.row[1][2]
                 self.row = None
 
         def handle_data(self, data):
@@ -386,9 +402,9 @@ class HtmlTableTests(unittest.TestCase):
             elif self.cell is not None:
                 self.cell[2] += data
 
-    def table(self, plugins):
+    def table(self, plugins, missing=MISSING):
         html_out = tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
-        MainTests.run_main(MainTests(), plugins=plugins, html_out=html_out)
+        MainTests.run_main(MainTests(), plugins=plugins, html_out=html_out, missing=missing)
         parser = self.Cells()
         with open(html_out, encoding="utf-8") as f:
             parser.feed(f.read())
@@ -412,6 +428,20 @@ class HtmlTableTests(unittest.TestCase):
         # The guide's 0.04 is cheaper than Euro Shop's 0.17, but Euro Shop stays highlighted.
         self.assertEqual([c[0] for c in t.rows["#001"]], ["price best", "price guide"])
         self.assertEqual(t.rows["#001"][1][2], "from £0.04")
+
+    def test_totals_row_sums_each_shops_cheapest_copies(self):
+        t = self.table({"jpshop": JapanShop(), "euroshop": EuroShop(), "guide": PriceGuide()})
+        # Euro Shop: 1.28 + 0.17; Japan Shop: 1.50 (cheapest of two) + 45.00; guide: 34.00 + 0.04.
+        self.assertEqual([c[2] for c in t.foot], ["£1.452 card(s)", "£46.502 card(s)",
+                                                  "from £34.042 card(s)"])
+
+    def test_english_name_shown_above_the_printed_name(self):
+        missing = json.loads(json.dumps(MISSING))
+        missing["sets"][0]["missing"][0]["name_en"] = "Ivysaur"
+        missing["sets"][1]["missing"][0]["name_en"] = "Bulbasaur"
+        t = self.table({"euroshop": EuroShop()}, missing=missing)
+        self.assertEqual(t.names, {"#002": "Ivysaurフシギソウ", "#003": "メガフシギバナex",
+                                   "#001": "Bulbasaur"})
 
 
 class SearchContextTests(unittest.TestCase):
