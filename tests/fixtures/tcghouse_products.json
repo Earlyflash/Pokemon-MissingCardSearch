@@ -1,0 +1,321 @@
+{
+ "products": [
+  {
+   "id": 15732963934534,
+   "title": "Tyrunt Common ME03: Perfect Order 044/088 NM",
+   "handle": "bulk-t3-20",
+   "tags": [
+    "044/088",
+    "2026",
+    "Common",
+    "English",
+    "Fighting",
+    "ME03: Perfect Order",
+    "Near Mint",
+    "Normal",
+    "Pokemon TCG",
+    "POR",
+    "singles",
+    "The Pokemon Company",
+    "Tomoki Sone",
+    "Tyrunt",
+    "Tyrunt Common ME03: Perfect Order 044/088 NM"
+   ],
+   "options": [
+    {
+     "name": "Condition",
+     "values": [
+      "Near Mint"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 57394265489734,
+     "title": "Near Mint",
+     "option1": "Near Mint",
+     "price": "0.49",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 15698152554822,
+   "title": "Zamazenta Holo Art Rare SV10: The Glory of Team Rocket 107/098 NM",
+   "handle": "bulk-jap-1-10",
+   "tags": [
+    "107/098",
+    "2025",
+    "Art Rare",
+    "Holofoil",
+    "Metal",
+    "Mitsuhiro Arita",
+    "Near Mint",
+    "Pokemon TCG",
+    "singles",
+    "SV10",
+    "SV10: The Glory of Team Rocket",
+    "Zamazenta",
+    "Zamazenta Holo Art Rare SV10: The Glory of Team Rocket 107/098 NM"
+   ],
+   "options": [
+    {
+     "name": "Condition",
+     "values": [
+      "Near Mint"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 57203228016966,
+     "title": "Near Mint",
+     "option1": "Near Mint",
+     "price": "3.49",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 15698152948038,
+   "title": "Team Rocket's Houndoom Holo Art Rare SV10: The Glory of Team Rocket 100/098 NM",
+   "handle": "bulk-jap-1-16",
+   "tags": [
+    "100/098",
+    "2025",
+    "Anesaki Dynamic",
+    "Art Rare",
+    "Colorless",
+    "Holofoil",
+    "Near Mint",
+    "Pokemon TCG",
+    "S12",
+    "singles",
+    "SV10: The Glory of Team Rocket",
+    "Team Rocket's Houndoom",
+    "Team Rocket's Houndoom Holo Art Rare SV10: The Glory of Team Rocket 100/098 NM"
+   ],
+   "options": [
+    {
+     "name": "Condition",
+     "values": [
+      "Near Mint"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 57203228770630,
+     "title": "Near Mint",
+     "option1": "Near Mint",
+     "price": "8.99",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 15689977266502,
+   "title": "Medicham Reverse Holo Uncommon SV10: Destined Rivals 100/182 NM",
+   "handle": "m-19",
+   "tags": [
+    "100/182",
+    "2025",
+    "5ban Graphics",
+    "ASC",
+    "Fighting",
+    "Medicham",
+    "Medicham Reverse Holo Uncommon SV10: Destined Rivals 100/182 NM",
+    "Near Mint",
+    "Pokemon TCG",
+    "Reverse Holofoil",
+    "singles",
+    "SV10: Destined Rivals",
+    "Uncommon"
+   ],
+   "options": [
+    {
+     "name": "Condition",
+     "values": [
+      "Near Mint"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 57164201951558,
+     "title": "Near Mint",
+     "option1": "Near Mint",
+     "price": "0.49",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 15522194653510,
+   "title": "ME02: Phantasmal Flames #079/094 Ambipom",
+   "handle": "me02-phantasmal-flames-079094-ambipom-45-vw56u",
+   "tags": [
+    "079/094",
+    "2025",
+    "Ambipom",
+    "ME02: Phantasmal Flames",
+    "Near Mint or Better",
+    "singles"
+   ],
+   "options": [
+    {
+     "name": "Title",
+     "values": [
+      "Default Title"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 56391943455046,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "price": "0.79",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 15530906091846,
+   "title": "Dusknoir #037/131",
+   "handle": "dusknoir-037-131",
+   "tags": [
+    "singles"
+   ],
+   "options": [
+    {
+     "name": "Title",
+     "values": [
+      "Default Title"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 56416943374662,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "price": "0.15",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 15698153210182,
+   "title": "Tarountula Holo Art Rare SV1V: Violet ex 079/078 NM",
+   "handle": "bulk-jap-1-21",
+   "tags": [
+    "079/078",
+    "2023",
+    "Art Rare",
+    "Grass",
+    "Holofoil",
+    "Near Mint",
+    "Pani Kobayashi",
+    "Pokemon TCG",
+    "singles",
+    "SV1V",
+    "SV1V: Violet ex",
+    "Tarountula",
+    "Tarountula Holo Art Rare SV1V: Violet ex 079/078 NM"
+   ],
+   "options": [
+    {
+     "name": "Condition",
+     "values": [
+      "Near Mint"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 57203229196614,
+     "title": "Near Mint",
+     "option1": "Near Mint",
+     "price": "3.49",
+     "available": false
+    }
+   ]
+  },
+  {
+   "id": 15694416707910,
+   "title": "Yanmega ex Holo Double Rare M2a: High Class Pack: MEGA Dream ex 003/193 NM",
+   "handle": "jap-dan-hill-1",
+   "tags": [
+    "003/193",
+    "2025",
+    "Double Rare",
+    "Grass",
+    "Holofoil",
+    "M2A",
+    "M2a: High Class Pack: MEGA Dream ex",
+    "Near Mint",
+    "Pokemon TCG",
+    "singles",
+    "takuyoa",
+    "Yanmega ex",
+    "Yanmega ex Holo Double Rare M2a: High Class Pack: MEGA Dream ex 003/193 NM"
+   ],
+   "options": [
+    {
+     "name": "Condition",
+     "values": [
+      "Near Mint"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 57185323024710,
+     "title": "Near Mint",
+     "option1": "Near Mint",
+     "price": "0.49",
+     "available": false
+    }
+   ]
+  },
+  {
+   "id": 15715046490438,
+   "title": "Garchomp & Giratina GX Holo Promo SM Promos SM193",
+   "handle": "bulk-sc-1",
+   "tags": [
+    "2016",
+    "Anesaki Dynamic",
+    "Dragon",
+    "English",
+    "Garchomp & Giratina GX",
+    "Garchomp & Giratina GX Holo Promo SM Promos SM193 NM",
+    "Holofoil",
+    "Near Mint",
+    "Pokemon TCG",
+    "Promo",
+    "singles",
+    "SM Promos",
+    "SM193",
+    "SMP"
+   ],
+   "options": [
+    {
+     "name": "Card",
+     "values": [
+      "Near Mint"
+     ]
+    }
+   ],
+   "variants": [
+    {
+     "id": 57279458640198,
+     "title": "Near Mint",
+     "option1": "Near Mint",
+     "price": "79.99",
+     "available": true
+    }
+   ]
+  }
+ ]
+}
