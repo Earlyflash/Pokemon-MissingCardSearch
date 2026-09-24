@@ -4,6 +4,7 @@ key is needed."""
 import io
 import os
 import sys
+import tempfile
 import unittest
 import urllib.error
 import urllib.parse
@@ -53,8 +54,11 @@ def card(card_id, name="", lang="en", set_name="151", name_en=None):
 class FakeContext(SearchContext):
     """Answers PulseAPI searches from lists of cards, `page_size` a page."""
 
-    def __init__(self, catalogue, page_size=100, rate_limited=0, status=None):
-        super().__init__(pulseapi.PLUGIN, config={"PULSEAPI_KEY": "pk_test"})
+    def __init__(self, catalogue, page_size=100, rate_limited=0, status=None, retry_after="7",
+                 max_limit=500, cache_dir=None):
+        super().__init__(pulseapi.PLUGIN, config={"PULSEAPI_KEY": "pk_test"}, cache_dir=cache_dir)
+        self.retry_after = retry_after
+        self.max_limit = max_limit
         self.catalogue = catalogue
         self.page_size = page_size
         self.rate_limited = rate_limited
@@ -71,8 +75,10 @@ class FakeContext(SearchContext):
         if self.rate_limited:
             self.rate_limited -= 1
             h = Message()
-            h["Retry-After"] = "7"
+            h["Retry-After"] = self.retry_after
             raise urllib.error.HTTPError(url, 429, "Too Many Requests", h, io.BytesIO())
+        if int(q.get("limit", 20)) > self.max_limit:
+            raise urllib.error.HTTPError(url, 400, "Bad Request", Message(), io.BytesIO())
         rows = [h for h in self.catalogue if h["language"] == q["language"]]
         if q.get("exclude_graded") == "true":
             rows = [h for h in rows if not h["graded_by"]]
@@ -164,6 +170,46 @@ class PulseAPITests(unittest.TestCase):
         offers = self.plugin.search_set([card("sv03.5-199")], ctx)
         self.assertEqual(len(offers), 1)
         self.assertEqual(self.slept, [7])
+
+    def test_a_used_up_daily_quota_stops_instead_of_waiting(self):
+        ctx = FakeContext(SV151, rate_limited=1, retry_after="7200")
+        with self.assertRaisesRegex(RuntimeError, "quota is used up; it resets in 120"):
+            self.plugin.search_set([card("sv03.5-199")], ctx)
+        self.assertEqual(self.slept, [])
+
+    def test_asks_for_500_a_page_then_falls_back_to_the_free_tiers_100(self):
+        ctx = FakeContext(SV151, max_limit=100)
+        offers = self.plugin.search_set([card("sv03.5-199")], ctx)
+        self.assertEqual(len(offers), 1)
+        self.assertEqual([q["limit"] for q in ctx.queries], ["500", "100", "100"])
+        self.plugin.search_set([card("sv03.5-001")], ctx)
+        self.assertEqual(ctx.queries[-1]["limit"], "100")
+
+    def test_remembers_which_set_it_found_for_the_next_run(self):
+        cache = tempfile.mkdtemp()
+        self.plugin.search_set([card("sv03.5-199")], FakeContext(SV151, cache_dir=cache))
+        self.plugin.search_set([card("zz1-001", "Nobody")], FakeContext(SV151, cache_dir=cache))
+        ctx = FakeContext(SV151, cache_dir=cache)
+        offers = self.plugin.search_set([card("sv03.5-199")], ctx)
+        self.assertEqual(len(offers), 1)
+        self.assertEqual([q.get("set_id") for q in ctx.queries], ["sv3pt5"])
+        ctx = FakeContext(SV151, cache_dir=cache)
+        self.assertEqual(self.plugin.search_set([card("zz1-001", "Nobody")], ctx), [])
+        self.assertEqual(ctx.queries, [])
+
+    def test_forgets_a_set_it_couldnt_find_after_a_week(self):
+        cache, now = tempfile.mkdtemp(), [1000.0]
+        plugin = pulseapi.PulseAPI(sleep=self.slept.append, clock=lambda: now[0])
+        plugin.search_set([card("zz1-001", "Nobody")], FakeContext(SV151, cache_dir=cache))
+        now[0] += 8 * 86400
+        ctx = FakeContext(SV151, cache_dir=cache)
+        plugin.search_set([card("zz1-001", "Nobody")], ctx)
+        self.assertTrue(ctx.queries)
+
+    def test_skips_languages_pulsetcg_has_no_sets_for(self):
+        german = MissingCard("sv03.5-199", "sv03.5", "151", "199", "", "German", "en")
+        self.assertFalse(pulseapi.PLUGIN.handles(german))
+        self.assertTrue(pulseapi.PLUGIN.handles(card("SV2a-006", lang="ja")))
 
     def test_a_refused_key_says_so(self):
         with self.assertRaisesRegex(RuntimeError, "PULSEAPI_KEY"):
