@@ -469,14 +469,17 @@ class HtmlTableTests(unittest.TestCase):
         guide = PriceGuide()
         guide.market_reference = True
         t = self.table({"euroshop": EuroShop(), "jpshop": JapanShop(), "guide": guide})
+        # The market price column comes first, bold and sticky.
+        self.assertEqual(t.headers[2:4], ["Price Guide", "price guide"])
+        self.assertEqual(t.rows["#001"][0][0], "price guide stick edge market")
         # #001: Euro Shop's £0.17 is the cheapest listing but above the £0.04
         # market price, so it keeps its highlight and gains the marker.
-        euro = t.rows["#001"][0]
+        euro = t.rows["#001"][1]
         self.assertEqual(euro[0], "price best over")
         self.assertEqual(euro[2], "£0.17 ▲325%NM")
         # #003: Japan Shop's £45.00 is above the £34.00 market price.
-        self.assertIn("over", t.rows["#003"][1][0])
-        self.assertIn("▲32%", t.rows["#003"][1][2])
+        self.assertIn("over", t.rows["#003"][2][0])
+        self.assertIn("▲32%", t.rows["#003"][2][2])
         # #002 has no market price, so nothing is marked.
         self.assertFalse(any("over" in c[0] or "under" in c[0] for c in t.rows["#002"]))
 
@@ -486,7 +489,7 @@ class HtmlTableTests(unittest.TestCase):
         # Japan Shop's cheapest #002 is ¥300 = £1.50; a 40 EUR (£34.00) market price is above it.
         guide.search = lambda card, ctx: offers_from({"M2a-002": [("40", "EUR", None)]}, card)
         t = self.table({"jpshop": JapanShop(), "guide": guide})
-        cls, _, text = t.rows["#002"][0]
+        cls, _, text = t.rows["#002"][1]
         self.assertIn("under", cls)
         self.assertNotIn("over", cls)
         self.assertEqual(text, "£1.50 ▼96%LP · +1")
