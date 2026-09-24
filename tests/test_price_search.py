@@ -446,13 +446,13 @@ class HtmlTableTests(unittest.TestCase):
         self.assertEqual((eu_cls, eu_url, eu_text), ("price best", "https://shop.example/M2a-002",
                                                      "£1.28"))
         # Japan Shop's cheapest copy of two, with its condition and the other copy counted.
-        self.assertEqual((jp_cls, jp_text), ("price", "£1.50LP · +1 more"))
+        self.assertEqual((jp_cls, jp_text), ("price", "£1.50LP · +1"))
         # No Euro Shop copy of #003: an empty cell.
         self.assertEqual(t.rows["#003"][0], ("price", None, ""))
 
     def test_price_guide_gets_its_own_from_column_never_highlighted(self):
         t = self.table({"euroshop": EuroShop(), "guide": PriceGuide()})
-        self.assertEqual(t.headers, ["#", "Card", "Euro Shop", "Price Guide (price guide)"])
+        self.assertEqual(t.headers, ["#", "Card", "Euro Shop", "Price Guide", "price guide"])
         # The guide's 0.04 is cheaper than Euro Shop's 0.17, but Euro Shop stays highlighted.
         self.assertEqual([c[0] for c in t.rows["#001"]], ["price best", "price guide"])
         self.assertEqual(t.rows["#001"][1][2], "from £0.04")
@@ -461,7 +461,7 @@ class HtmlTableTests(unittest.TestCase):
         guide = PriceGuide()
         guide.guide_label, guide.guide_prefix = "market price", ""
         t = self.table({"euroshop": EuroShop(), "guide": guide})
-        self.assertEqual(t.headers[-1], "Price Guide (market price)")
+        self.assertEqual(t.headers[-2:], ["Price Guide", "market price"])
         self.assertEqual(t.rows["#001"][1][2], "£0.04")
         self.assertEqual(t.foot[-1][2], "£34.042 card(s)")
 
@@ -473,10 +473,10 @@ class HtmlTableTests(unittest.TestCase):
         # market price, so it keeps its highlight and gains the marker.
         euro = t.rows["#001"][0]
         self.assertEqual(euro[0], "price best over")
-        self.assertEqual(euro[2], "£0.17 ▲▲ 325% over market · NM")
+        self.assertEqual(euro[2], "£0.17 ▲325%NM")
         # #003: Japan Shop's £45.00 is above the £34.00 market price.
         self.assertIn("over", t.rows["#003"][1][0])
-        self.assertIn("▲ 32% over market", t.rows["#003"][1][2])
+        self.assertIn("▲32%", t.rows["#003"][1][2])
         # #002 has no market price, so nothing is marked.
         self.assertFalse(any("over" in c[0] or "under" in c[0] for c in t.rows["#002"]))
 
@@ -489,7 +489,7 @@ class HtmlTableTests(unittest.TestCase):
         cls, _, text = t.rows["#002"][0]
         self.assertIn("under", cls)
         self.assertNotIn("over", cls)
-        self.assertIn("▼▼ 96% under market", text)
+        self.assertEqual(text, "£1.50 ▼96%LP · +1")
 
     def test_no_marker_without_a_market_price_guide(self):
         t = self.table({"euroshop": EuroShop(), "guide": PriceGuide()})

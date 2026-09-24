@@ -344,29 +344,32 @@ HTML_STYLE = """
           --over: #ff8a80; --under: #7ee2a0; }
 }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
-       font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+       font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
 h1 { font-size: 20px; margin: 0 0 4px; }
 p { margin: 4px 0; color: var(--muted); }
 label { display: inline-block; margin: 8px 0 12px; }
 table { border-collapse: collapse; min-width: 100%; }
-th, td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left;
+th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left;
          vertical-align: top; }
-thead th { position: sticky; top: 0; z-index: 1; background: var(--head); white-space: nowrap;
-           box-shadow: inset 0 -1px var(--line); }
+thead th { position: sticky; top: 0; z-index: 1; background: var(--head); vertical-align: bottom;
+           box-shadow: inset 0 -1px var(--line); max-width: 7em; font-size: 12px; }
+thead th small { font-weight: normal; }
+td.card { min-width: 9em; max-width: 14em; }
 tfoot th, tfoot td { background: var(--head); font-weight: 600; border-top: 2px solid var(--line); }
 tfoot small { font-weight: normal; }
 tr.set th { background: var(--set); font-weight: 600; }
 tr.set th span { font-weight: normal; color: var(--muted); }
 td.num { white-space: nowrap; color: var(--muted); }
 td.price { white-space: nowrap; }
+td.price small { white-space: normal; max-width: 7em; }
 td.best { background: var(--best); }
 td.best a { color: var(--best-fg); font-weight: 600; }
 td.guide, td.guide a { color: var(--muted); }
-span.over { color: var(--over); font-weight: 600; }
-span.under { color: var(--under); font-weight: 600; }
+span.over { color: var(--over); font-weight: 600; font-size: 11px; }
+span.under { color: var(--under); font-weight: 600; font-size: 11px; }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
-small { display: block; color: var(--muted); }
+small { display: block; color: var(--muted); font-size: 11px; }
 body.for-sale-only tr.unsold { display: none; }
 """
 
@@ -378,9 +381,9 @@ def _money(amount, currency):
 def _html_cell(offers, currency, guide=False, best=False, prefix="from ", market=None):
     """One marketplace's cell for one card: its cheapest offer, linked. A
     listing priced above `market` (the card's market price, if known) gets a
-    ▲ marker and how far over it is, one below it a ▼ and how far under; the
-    cell's colour doesn't change, so the cheapest-listing highlight still
-    shows."""
+    ▲ and how far over it is beside its price, one below it a ▼ and how far
+    under; the cell's colour doesn't change, so the cheapest-listing
+    highlight still shows. Kept short so the table stays narrow."""
     esc = html.escape
     if not offers:
         return '<td class="price"></td>'
@@ -389,20 +392,21 @@ def _html_cell(offers, currency, guide=False, best=False, prefix="from ", market
     side = None
     if not guide and market and price is not None and price != market:
         side = "over" if price > market else "under"
-    notes = [o.grade and f"graded {o.grade}", o.condition, len(offers) > 1 and f"+{len(offers) - 1} more"]
-    note = esc(" · ".join(n for n in notes if n))
+    more = len(offers) - 1
+    notes = [o.grade, o.condition, more and f"+{more}"]
+    note = " · ".join(n for n in notes if n)
+    note_title = " · ".join(n for n in [o.grade and f"graded {o.grade}", o.condition,
+                                        more and f"{more} more listing(s)"] if n)
     marker = ""
     if side:
         arrow, word = ("▲", "above") if side == "over" else ("▼", "below")
         pct = int((abs(price - market) / market * 100).quantize(Decimal(1), ROUND_HALF_UP))
-        marker = (f' <span class="{side}" title="{esc(_money(abs(price - market), currency))} {word} '
-                  f'the {esc(_money(market, currency))} market price">{arrow}</span>')
-        side_note = f'<span class="{side}">{arrow} {pct}% {side} market</span>'
-        note = f"{side_note} · {note}" if note else side_note
+        marker = (f' <span class="{side}" title="{pct}% ({esc(_money(abs(price - market), currency))}) '
+                  f'{word} the {esc(_money(market, currency))} market price">{arrow}{pct}%</span>')
     classes = "price" + (" guide" if guide else "") + (" best" if best else "") + (f" {side}" if side else "")
     return (f'<td class="{classes}"><a href="{esc(o.url)}" title="{esc(o.title)}" target="_blank" '
             f'rel="noopener">{prefix if guide else ""}{esc(shown)}</a>{marker}'
-            f'{f"<small>{note}</small>" if note else ""}</td>')
+            f'{f"<small title={chr(34)}{esc(note_title)}{chr(34)}>{esc(note)}</small>" if note else ""}</td>')
 
 
 def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
@@ -413,7 +417,7 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
     esc = html.escape
     columns = ([(p, False) for p in plugins if not p.price_guide]
                + [(p, True) for p in plugins if p.price_guide])
-    head = "".join(f"<th>{esc(p.name)}{f' ({esc(p.guide_label)})' if g else ''}</th>"
+    head = "".join(f"<th>{esc(p.name)}{f'<small>{esc(p.guide_label)}</small>' if g else ''}</th>"
                    for p, g in columns)
     body, grand_found, grand_cards, grand_total = [], 0, 0, Decimal(0)
     shop_totals = {p.id: [Decimal(0), 0] for p, _ in columns}  # [sum of cheapest copies, cards]
@@ -442,7 +446,7 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
             else:
                 card = esc(c.name)
             rows.append(f'<tr class="{"sold" if listed else "unsold"}"><td class="num">'
-                        f'#{esc(c.local_id)}</td><td>{card}</td>{"".join(cells)}</tr>')
+                        f'#{esc(c.local_id)}</td><td class="card">{card}</td>{"".join(cells)}</tr>')
         grand_found += found
         grand_cards += len(cards)
         grand_total += total
