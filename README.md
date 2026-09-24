@@ -239,6 +239,40 @@ Each offer says how sure the match is: `exact` (matched on set and card
 number), `likely`, or `uncertain` (might be a different print; left out of
 the cheapest unless `--include-uncertain`).
 
+## Adding the missing cards to a Cardmarket wants list
+
+`wants_list.py` writes the missing cards as a list to paste into the
+"Add Deck List" box on a Cardmarket wants list, so they all go into one
+wants list in a single paste:
+
+```bash
+python wants_list.py missing_cards.csv                      # cardmarket_wants.txt
+python wants_list.py missing.json --max-price 20            # leave out cards over £20
+python wants_list.py missing.json --set "Abyss Eye" --min-price 1 --out abyss_eye.txt
+```
+
+Cardmarket's box takes one card per line as amount, name and attacks
+(`1 Dragapult ex Jet Headbutt Phantom Dive`); trainers and energy need only
+the name. Each card is matched to its Cardmarket product through TCGdex and
+the line is built from Cardmarket's own product name, so it matches what
+Cardmarket expects. It also writes a CSV next to the list with every missing
+card, its price and whether it made the list, so you can check it against
+Cardmarket's report of what it added.
+
+| Flag | Meaning |
+|---|---|
+| `--out FILE` | Where to write the list (default `cardmarket_wants.txt`). |
+| `--csv-out FILE` | The per-card CSV (default: `--out` with `.csv`). |
+| `--set NAME` | Only include this set, by name or TCGdex set id (repeatable). |
+| `--max-price AMOUNT` / `--min-price AMOUNT` | Leave out cards priced above / below this. |
+| `--price FIELD` | Price-guide figure the filters use: `trend` (default, falls back to `low` when a card has none), `low`, `avg`, `avg7` or `avg30`. |
+| `--skip-unpriced` | Also leave out cards Cardmarket has no price for (kept by default). |
+| `--currency CODE` | Currency for prices and filters (default `GBP`). |
+
+Prices come from Cardmarket's public daily price guide (in EUR, converted).
+The lines don't name an expansion, so Cardmarket adds each as that card from
+any expansion; reprints with the same name and attacks share one line.
+
 ## How it works
 
 1. Every card in the export is grouped by **set name + print language**, so

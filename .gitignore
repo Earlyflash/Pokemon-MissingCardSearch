@@ -3,3 +3,4 @@ __pycache__/
 .rarecandy-session.json
 .price_cache/
 .env
+cardmarket_wants*.txt
