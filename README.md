@@ -142,11 +142,15 @@ against real listings or counted in the totals, and go to their own CSV,
 
 It also writes `price_table.html` (next to `offers.csv`), the easiest way to
 read the results: open it in a browser for one row per missing card, grouped
-by set, and one column per marketplace. Each cell is that marketplace's
+by set, and one column per marketplace. Cards are named in English where
+missing_cards.py found an English name, with the printed name underneath, and
+the marketplace names stay at the top of the screen as you scroll. Each cell is that marketplace's
 cheapest copy (with its condition or grade, and how many more copies it has),
 and the price links straight to the listing. The cheapest listing for each
 card is highlighted. Price-guide marketplaces such as Cardmarket get their own
-columns as "from" prices and are never highlighted. A checkbox hides the cards
+columns as "from" prices and are never highlighted. The last row totals each
+marketplace: the sum of its cheapest copy of every card it has, and how many
+cards that covers. A checkbox hides the cards
 nobody has for sale.
 
 | Flag | Meaning |
