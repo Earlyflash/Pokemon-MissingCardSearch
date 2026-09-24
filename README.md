@@ -157,9 +157,10 @@ and the price links straight to the listing. The cheapest listing for each
 card is highlighted. Price-guide marketplaces get their own columns and are
 never highlighted: Cardmarket's as "from" prices, PulseAPI's as "market
 price". When PulseAPI has a market price for a card, any listing priced above
-it gets a red ▲ next to its price and "▲ N% over market" underneath (hover
-the ▲ for the amounts); the cell itself isn't recoloured, so the cheapest
-listing's highlight still shows. The last row totals each
+it gets a red ▲ next to its price and "▲ N% over market" underneath, and any
+priced below it a green ▼ and "▼ N% under market" (hover the arrow for the
+amounts); the cell itself isn't recoloured, so the cheapest listing's
+highlight still shows. The last row totals each
 marketplace: the sum of its cheapest copy of every card it has, and how many
 cards that covers. A checkbox hides the cards
 nobody has for sale.

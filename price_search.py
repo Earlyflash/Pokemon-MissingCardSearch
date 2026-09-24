@@ -337,11 +337,11 @@ CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥"}
 HTML_STYLE = """
 :root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d9d9de; --head: #f2f2f5;
         --set: #e6ecf5; --best: #d4f5dc; --best-fg: #0b5d1e; --link: #0a58ca;
-        --over: #b3261e; }
+        --over: #b3261e; --under: #0b6b2e; }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #151517; --fg: #ececf0; --muted: #9a9aa2; --line: #34343a; --head: #202024;
           --set: #1f2a3a; --best: #174a26; --best-fg: #b8f0c6; --link: #7fb2ff;
-          --over: #ff8a80; }
+          --over: #ff8a80; --under: #7ee2a0; }
 }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -363,6 +363,7 @@ td.best { background: var(--best); }
 td.best a { color: var(--best-fg); font-weight: 600; }
 td.guide, td.guide a { color: var(--muted); }
 span.over { color: var(--over); font-weight: 600; }
+span.under { color: var(--under); font-weight: 600; }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 small { display: block; color: var(--muted); }
@@ -377,24 +378,28 @@ def _money(amount, currency):
 def _html_cell(offers, currency, guide=False, best=False, prefix="from ", market=None):
     """One marketplace's cell for one card: its cheapest offer, linked. A
     listing priced above `market` (the card's market price, if known) gets a
-    ▲ marker and how far over it is; the cell's colour doesn't change, so the
-    cheapest-listing highlight still shows."""
+    ▲ marker and how far over it is, one below it a ▼ and how far under; the
+    cell's colour doesn't change, so the cheapest-listing highlight still
+    shows."""
     esc = html.escape
     if not offers:
         return '<td class="price"></td>'
     price, o = offers[0]
     shown = _money(price, currency) if price is not None else f"{o.currency} {o.price}"
-    over = bool(not guide and market and price is not None and price > market)
+    side = None
+    if not guide and market and price is not None and price != market:
+        side = "over" if price > market else "under"
     notes = [o.grade and f"graded {o.grade}", o.condition, len(offers) > 1 and f"+{len(offers) - 1} more"]
     note = esc(" · ".join(n for n in notes if n))
     marker = ""
-    if over:
-        pct = int(((price - market) / market * 100).quantize(Decimal(1), ROUND_HALF_UP))
-        marker = (f' <span class="over" title="{esc(_money(price - market, currency))} above the '
-                  f'{esc(_money(market, currency))} market price">▲</span>')
-        over_note = f'<span class="over">▲ {pct}% over market</span>'
-        note = f"{over_note} · {note}" if note else over_note
-    classes = "price" + (" guide" if guide else "") + (" best" if best else "") + (" over" if over else "")
+    if side:
+        arrow, word = ("▲", "above") if side == "over" else ("▼", "below")
+        pct = int((abs(price - market) / market * 100).quantize(Decimal(1), ROUND_HALF_UP))
+        marker = (f' <span class="{side}" title="{esc(_money(abs(price - market), currency))} {word} '
+                  f'the {esc(_money(market, currency))} market price">{arrow}</span>')
+        side_note = f'<span class="{side}">{arrow} {pct}% {side} market</span>'
+        note = f"{side_note} · {note}" if note else side_note
+    classes = "price" + (" guide" if guide else "") + (" best" if best else "") + (f" {side}" if side else "")
     return (f'<td class="{classes}"><a href="{esc(o.url)}" title="{esc(o.title)}" target="_blank" '
             f'rel="noopener">{prefix if guide else ""}{esc(shown)}</a>{marker}'
             f'{f"<small>{note}</small>" if note else ""}</td>')
@@ -450,8 +455,8 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
         f'<td class="price{" guide" if g else ""}">{esc(p.guide_prefix) if g else ""}'
         f'{esc(_money(shop_totals[p.id][0], currency))}'
         f'<small>{shop_totals[p.id][1]} card(s)</small></td>' for p, g in columns)
-    over_note = "".join(f" A ▲ marks a listing priced above {p.name}'s market price."
-                        for p, g in columns if g and p.market_reference)
+    over_note = "".join(f" A ▲ marks a listing priced above {p.name}'s market price, a ▼ one "
+                        f"below it." for p, g in columns if g and p.market_reference)
     guide_note = "".join(f" {p.name} shows {p.guide_description}." for p, g in columns if g)
     if guide_note:
         guide_note += (" Those price-guide columns aren't listings and don't count towards "

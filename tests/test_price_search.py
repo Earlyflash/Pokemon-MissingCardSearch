@@ -478,7 +478,18 @@ class HtmlTableTests(unittest.TestCase):
         self.assertIn("over", t.rows["#003"][1][0])
         self.assertIn("▲ 32% over market", t.rows["#003"][1][2])
         # #002 has no market price, so nothing is marked.
-        self.assertFalse(any("over" in c[0] for c in t.rows["#002"]))
+        self.assertFalse(any("over" in c[0] or "under" in c[0] for c in t.rows["#002"]))
+
+    def test_listings_below_a_market_price_are_marked_too(self):
+        guide = PriceGuide()
+        guide.market_reference = True
+        # Japan Shop's cheapest #002 is ¥300 = £1.50; a 40 EUR (£34.00) market price is above it.
+        guide.search = lambda card, ctx: offers_from({"M2a-002": [("40", "EUR", None)]}, card)
+        t = self.table({"jpshop": JapanShop(), "guide": guide})
+        cls, _, text = t.rows["#002"][0]
+        self.assertIn("under", cls)
+        self.assertNotIn("over", cls)
+        self.assertIn("▼▼ 96% under market", text)
 
     def test_no_marker_without_a_market_price_guide(self):
         t = self.table({"euroshop": EuroShop(), "guide": PriceGuide()})
