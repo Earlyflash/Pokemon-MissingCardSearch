@@ -14,6 +14,7 @@ contract.
 import hashlib
 import json
 import os
+import sys
 import threading
 import time
 import urllib.request
@@ -108,10 +109,15 @@ class Marketplace:
 class SearchContext:
     """What the core hands a plugin for one run: its settings, a paced and
     cached HTTP fetch, a logger, and `state` for anything it wants to keep
-    between search calls (e.g. a catalogue it fetched once)."""
+    between search calls (e.g. a catalogue it fetched once).
+
+    While a plugin works through many pages, fetch() prints a progress line
+    to stderr at most every `progress_interval` seconds, so a long search
+    isn't silent and stdout keeps only the results."""
 
     def __init__(self, plugin, config=None, cache_dir=None, cache_ttl=6 * 3600,
-                 verbose=False, sleep=time.sleep, clock=time.monotonic):
+                 verbose=False, sleep=time.sleep, clock=time.monotonic,
+                 progress_interval=5.0, progress_stream=None):
         self.plugin_id = plugin.id
         self.config = config or {}
         self.cache_dir = cache_dir
@@ -123,9 +129,40 @@ class SearchContext:
         self._lock = threading.Lock()
         self._sleep = sleep
         self._clock = clock
+        self.fetched = 0       # pages downloaded this run
+        self.cache_hits = 0    # pages read from the on-disk cache instead
+        self._progress_interval = progress_interval
+        self._progress_stream = progress_stream
+        self._last_progress = clock()
 
     def log(self, msg):
         print(f"[{self.plugin_id}] {msg}")
+
+    def progress(self, msg):
+        """A status line for the person waiting, on stderr (None = sys.stderr
+        at the time, so redirecting it works)."""
+        stream = self._progress_stream or sys.stderr
+        # One write per line, so lines from plugins running in parallel
+        # don't run into each other.
+        stream.write(f"[{self.plugin_id}] {msg}\n")
+        stream.flush()
+
+    def pages_summary(self):
+        cached = f", {self.cache_hits} from cache" if self.cache_hits else ""
+        return f"{self.fetched} page(s) fetched{cached}"
+
+    def _counted(self, cache_hit):
+        with self._lock:
+            if cache_hit:
+                self.cache_hits += 1
+            else:
+                self.fetched += 1
+            now = self._clock()
+            due = now - self._last_progress >= self._progress_interval
+            if due:
+                self._last_progress = now
+        if due:
+            self.progress(f"still working: {self.pages_summary()} so far...")
 
     def debug(self, msg):
         if self.verbose:
@@ -144,7 +181,9 @@ class SearchContext:
             self.debug(f"cache hit {url}")
             with open(path, encoding="utf-8") as f:
                 body = f.read()
+            body_from_cache = True
         else:
+            body_from_cache = False
             with self._lock:
                 if self._last_request is not None:
                     wait = self._min_interval - (self._clock() - self._last_request)
@@ -160,4 +199,5 @@ class SearchContext:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(body)
+        self._counted(cache_hit=body_from_cache)
         return json.loads(body) if as_json else body

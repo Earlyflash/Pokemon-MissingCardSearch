@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -95,7 +95,7 @@ def write_json(data):
 
 
 def ctx_for(plugin):
-    return SearchContext(plugin)
+    return SearchContext(plugin, progress_stream=io.StringIO())
 
 
 class LoadMissingTests(unittest.TestCase):
@@ -281,12 +281,24 @@ class MainTests(unittest.TestCase):
         plugins = plugins or {"jpshop": JapanShop(), "euroshop": EuroShop(), "keyed": KeyedShop()}
         with patch.object(marketplaces, "discover", return_value=plugins), \
                 patch.object(price_search, "fetch_rate", side_effect=lambda s, d: RATES[(s, d)]), \
-                patch.dict(os.environ, {}, clear=False), redirect_stdout(io.StringIO()) as out:
+                patch.dict(os.environ, {}, clear=False), redirect_stdout(io.StringIO()) as out, \
+                redirect_stderr(io.StringIO()) as err:
             os.environ.pop("KEYED_SHOP_TOKEN", None)
             price_search.main([write_json(MISSING), "--out", out_csv, "--guide-out", guide_csv,
                                "--html-out", html_out, "--no-cache", *extra])
+        self.progress = err.getvalue()
         with open(out_csv, encoding="utf-8") as f:
             return list(csv.DictReader(f)), out.getvalue()
+
+    def test_reports_each_marketplace_on_stderr_not_stdout(self):
+        _, out = self.run_main()
+        self.assertIn("[jpshop] started: 1 set(s) to search", self.progress)
+        self.assertIn("[jpshop] set 1/1 MEGA Dream ex: 3 offer(s)", self.progress)
+        self.assertIn("[euroshop] set 2/2 Mega Evolution: 1 offer(s)", self.progress)
+        self.assertRegex(self.progress, r"\[\w+\] done in \d+s: .*\(1/2 finished; still waiting on \w+\)")
+        self.assertRegex(self.progress, r"\(2/2 finished\)")
+        self.assertNotIn("started:", out)
+        self.assertNotIn("finished", out)
 
     def test_writes_every_offer_cheapest_first(self):
         rows, out = self.run_main()
@@ -431,6 +443,20 @@ class SearchContextTests(unittest.TestCase):
             ctx.fetch("https://a.example/2")
         self.assertEqual(calls, ["https://a.example/1", "https://a.example/2"])
         self.assertEqual(sleeps, [1.5])
+        self.assertEqual((ctx.fetched, ctx.cache_hits), (2, 1))
+
+    def test_fetch_prints_a_progress_line_every_few_seconds(self):
+        now, stream = [0.0], io.StringIO()
+        ctx = SearchContext(EuroShop(), sleep=lambda s: None, clock=lambda: now[0],
+                            progress_interval=5.0, progress_stream=stream)
+        with patch("urllib.request.urlopen", lambda req, timeout: self.FakeResponse(b"{}")):
+            for _ in range(12):
+                now[0] += 1.0
+                ctx.fetch("https://a.example/page")
+        self.assertEqual(stream.getvalue().splitlines(), [
+            "[euroshop] still working: 5 page(s) fetched so far...",
+            "[euroshop] still working: 10 page(s) fetched so far...",
+        ])
 
 
 class DiscoverTests(unittest.TestCase):

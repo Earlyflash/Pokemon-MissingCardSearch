@@ -127,7 +127,13 @@ python price_search.py missing.json --marketplace deckdhq --cheapest-only
 python price_search.py --list-marketplaces
 ```
 
-It prints a per-set summary (how many missing cards are for sale, and what
+While it runs, each marketplace reports its progress on stderr: when it
+starts, how many pages it has fetched every few seconds, each set as it's
+searched, and when it's done (with how many marketplaces are still going).
+The slowest shops read their whole catalogue, e.g. Japan2UK's ~88 pages take
+about a minute and a half, and later runs within 6 hours use the cache.
+
+When it's finished it prints a per-set summary (how many missing cards are for sale, and what
 buying the cheapest of each would cost) and writes the offers to
 `offers.csv`. Prices are the listed item price converted to one currency;
 **shipping isn't counted**. Graded slabs are included and compete on price
