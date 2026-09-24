@@ -22,10 +22,12 @@ search, and a search already returns prices. So reading a set costs one
 search per page, 500 cards a page on a paid key or 100 on the free tier.
 
 PulseAPI's set codes aren't TCGdex's (its 151 is "sv3pt5" where TCGdex says
-"sv03.5"), so each set is found once per run: first by trying the TCGdex set
-id and its usual spellings as PulseAPI's `set_id` filter, then, if none of
-those is a set PulseAPI has in the card's language, by searching a missing
-card by name and taking the set its number comes from. The whole set is then
+"sv03.5", and Japanese sets carry a suffix, "m2_jp"), so each set is found
+once: first by trying the TCGdex set id and its usual spellings as PulseAPI's
+`set_id` filter, then, if none of those is a set PulseAPI has in the card's
+language, by searching a few missing cards by name and taking the set their
+numbers come from, provided more than one card agrees or the set's name is
+close to the one RareCandy gives. The whole set is then
 read and cards match on set plus card number, so a set costs a few requests
 however many cards are missing from it. Which PulseAPI set (or none) each
 TCGdex set turned out to be is kept in the cache folder, so later runs skip
@@ -50,11 +52,17 @@ MAX_PAGES = 20           # no Pokemon set has 2,000 ungraded near-mint cards
 NAME_PROBES = 3          # missing cards to search by name when the set id guesses miss
 MAX_RETRIES = 5          # 429s in a row before giving up on a request
 MAX_RETRY_WAIT = 65      # seconds; longer means a daily or monthly quota, not worth waiting for
-SET_MAP_FILE = "set_ids.json"
+# v2: v1 could hold a wrong set found by a single name match (M2 -> l2_jp).
+SET_MAP_FILE = "set_ids_v2.json"
 SET_MAP_TTL = {True: 30 * 86400, False: 7 * 86400}  # found / not found; new sets appear daily
 # Card languages PulseTCG has sets for (its site lists English, Japanese and
 # Chinese sets); a German or French print would only waste requests.
 LANGUAGES = {"English", "Japanese", "Chinese"}
+LANGUAGE_SUFFIXES = {"Japanese": "jp", "Chinese": "cn"}  # PulseAPI set id suffix
+# A set found by searching card names is only trusted when more than one
+# probe card lands in it, or its name is close to the set's own name: a
+# single card number matching is often another set's card with that number.
+MIN_NAME_SIMILARITY = 0.6
 
 
 def norm_number(number):
@@ -64,11 +72,14 @@ def norm_number(number):
     return re.sub(r"(?<!\d)0+(?=\d)", "", first)
 
 
-def set_id_guesses(set_id):
-    """PulseAPI set codes to try for a TCGdex set id: the id itself, lowercase,
-    and pokemontcg.io's spelling (TCGdex 'sv03.5' -> 'sv3pt5', 'swsh07' ->
-    'swsh7')."""
-    guesses = [set_id, set_id.lower()]
+def set_id_guesses(set_id, language="English"):
+    """PulseAPI set codes to try for a TCGdex set id. Non-English sets carry a
+    language suffix ('m2_jp' for Japanese Inferno X), so that comes first for
+    them; then the id itself, lowercase, and pokemontcg.io's spelling (TCGdex
+    'sv03.5' -> 'sv3pt5', 'swsh07' -> 'swsh7')."""
+    suffix = LANGUAGE_SUFFIXES.get(language)
+    guesses = [f"{set_id.lower()}_{suffix}"] if suffix else []
+    guesses += [set_id, set_id.lower()]
     m = re.fullmatch(r"([a-z]+)0*(\d+)(\.5)?", set_id.lower())
     if m:
         guesses.append(f"{m.group(1)}{m.group(2)}{'pt5' if m.group(3) else ''}")
@@ -193,7 +204,7 @@ class PulseAPI(Marketplace):
 
     def _find_set(self, cards, ctx):
         first = cards[0]
-        for guess in set_id_guesses(first.set_id):
+        for guess in set_id_guesses(first.set_id, first.language):
             data, meta = self._search(ctx, first.language, set_id=guess)
             hits = [h for h in data if str(h.get("set_id", "")).lower() == guess.lower()]
             if hits:  # the filter is exact, so any card back means it's the set
@@ -210,13 +221,15 @@ class PulseAPI(Marketplace):
                     names[h["set_id"]] = h.get("set_name") or ""
                 if hits:
                     break
-            if votes:  # one card's number is enough to go on; the set name breaks ties
-                break
         if not votes:
             return None, ([], {})
         similarity = lambda sid: difflib.SequenceMatcher(  # noqa: E731
             None, names[sid].lower(), (first.set_name or "").lower()).ratio()
         best = max(votes, key=lambda sid: (votes[sid], similarity(sid)))
+        if votes[best] < 2 and similarity(best) < MIN_NAME_SIMILARITY:
+            ctx.debug(f"{first.set_name}: not trusting PulseAPI set {best!r} ({names[best]}): "
+                      f"only one card number matched and the set name differs")
+            return None, ([], {})
         ctx.debug(f"{first.set_name}: PulseAPI set_id {best!r} ({names[best]}) from a name search")
         return best, None
 

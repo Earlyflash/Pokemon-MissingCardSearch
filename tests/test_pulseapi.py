@@ -111,6 +111,7 @@ class PulseAPITests(unittest.TestCase):
         self.assertEqual(pulseapi.norm_number("TG05/TG30"), "TG5")
         self.assertEqual(pulseapi.set_id_guesses("sv03.5"), ["sv03.5", "sv3pt5"])
         self.assertEqual(pulseapi.set_id_guesses("SV2a"), ["SV2a", "sv2a"])
+        self.assertEqual(pulseapi.set_id_guesses("M2", "Japanese"), ["m2_jp", "M2", "m2"])
         self.assertEqual(pulseapi.set_id_guesses("swsh7"), ["swsh7"])
 
     def test_prices_an_english_set_found_by_its_pokemontcg_style_id(self):
@@ -151,8 +152,28 @@ class PulseAPITests(unittest.TestCase):
         offers = self.plugin.search_set(
             [card("SV2a-006", "ヒトカゲ", "ja", "Pokemon Card 151", name_en="Charmander")], ctx)
         self.assertEqual([(o.card_id, o.price) for o in offers], [("SV2a-006", Decimal("0.5"))])
-        self.assertEqual(ctx.queries[2].get("q"), "Charmander")
+        self.assertEqual(ctx.queries[3].get("q"), "Charmander")
         self.assertEqual(ctx.queries[-1].get("set_id"), "PC151")
+
+    def test_finds_a_japanese_set_by_its_jp_suffixed_id(self):
+        catalogue = [dict(h, set_id="sv2a_jp") for h in JP]
+        ctx = FakeContext(catalogue)
+        offers = self.plugin.search_set([card("SV2a-006", "ヒトカゲ", "ja")], ctx)
+        self.assertEqual([(o.card_id, o.price) for o in offers], [("SV2a-006", Decimal("0.5"))])
+        self.assertEqual([q.get("set_id") for q in ctx.queries], ["sv2a_jp"])
+
+    def test_one_matching_number_in_an_unrelated_set_isnt_trusted(self):
+        # Inferno X (M2) once matched an old Legend set (l2_jp) because its
+        # Oddish shares the number 001 with Inferno X's.
+        legend = [hit("l2_jp", "001/095", "Oddish", 4.0, language="Japanese",
+                      set_name="Revived Legends"),
+                  hit("l2_jp", "064/095", "Jigglypuff", 60.07, language="Japanese",
+                      set_name="Revived Legends")]
+        ctx = FakeContext(legend)
+        offers = self.plugin.search_set(
+            [card("M2-001", "ナゾノクサ", "ja", "Inferno X", name_en="Oddish"),
+             card("M2-002", "クサイハナ", "ja", "Inferno X", name_en="Gloom")], ctx)
+        self.assertEqual(offers, [])
 
     def test_reads_every_page_of_a_set(self):
         ctx = FakeContext(SV151, page_size=2)
