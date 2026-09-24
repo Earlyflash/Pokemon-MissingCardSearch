@@ -32,12 +32,23 @@ ME01_EN = {"id": "me01", "name": "Mega Evolution", "cards": [
 ]}
 
 
+CARDMARKET_PRODUCTS = {"products": [
+    {"idProduct": 2, "name": "Ivysaur [Leech Seed]", "idExpansion": 9},
+    {"idProduct": 3, "name": "Mega Venusaur ex", "idExpansion": 9},
+]}
+
+
 def fake_fetch(url, verbose=False):
     routes = {
         "/ja/sets": JA_LISTING,
         "/en/sets": EN_LISTING,
         "/ja/sets/M2a": M2A_JA,
         "/en/sets/me01": ME01_EN,
+        # M2a-001 deliberately has no Cardmarket product.
+        "/ja/cards/M2a-001": {"id": "M2a-001", "pricing": {}},
+        "/ja/cards/M2a-002": {"id": "M2a-002", "pricing": {"cardmarket": {"idProduct": 2}}},
+        "/ja/cards/M2a-003": {"id": "M2a-003", "pricing": {"cardmarket": {"idProduct": 3}}},
+        "products_singles_6.json": CARDMARKET_PRODUCTS,
     }
     for suffix, payload in routes.items():
         if url.endswith(suffix):
@@ -236,7 +247,8 @@ class MainTests(unittest.TestCase):
                          ("M2a", "ja", 1, 3))
         self.assertEqual(m2a["missing"][0], {
             "card_id": "M2a-002", "set_id": "M2a", "set_name": "MEGA Dream ex",
-            "local_id": "002", "name": "フシギソウ", "language": "Japanese",
+            "local_id": "002", "name": "フシギソウ", "name_en": "Ivysaur",
+            "language": "Japanese",
             "tcgdex_lang": "ja", "rarity": None, "finish": None,
         })
         self.assertEqual(data["unmatched"],
@@ -285,6 +297,63 @@ class MainTests(unittest.TestCase):
         with self.assertRaises(SystemExit), redirect_stdout(io.StringIO()), \
                 patch("sys.stderr", io.StringIO()):
             missing_cards.main(["--csv", "x.csv", "--min-complete", "150"])
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_english_names_in_csv_and_report(self, _):
+        export = write_export([("X", "Mega Evolution", "002", "English", 1)])
+        with open(export, "a", encoding="utf-8") as f:
+            f.write("Y,MEGA Dream ex,,999,Japanese,,,,1.00,1,,C,\n")
+        out = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        stdout = io.StringIO()
+        try:
+            with redirect_stdout(stdout):
+                missing_cards.main(["--csv", export, "--out", out, "--min-complete", "0"])
+            with open(out, newline="", encoding="utf-8-sig") as f:
+                rows = {r["TCGdex Card ID"]: r["English Name"] for r in csv.DictReader(f)}
+        finally:
+            os.unlink(export)
+            os.unlink(out)
+        self.assertEqual(rows, {
+            "M2a-001": "",                  # no Cardmarket product on TCGdex
+            "M2a-002": "Ivysaur",           # " [Leech Seed]" suffix dropped
+            "M2a-003": "Mega Venusaur ex",
+            "me01-001": "Bulbasaur",        # English sets use their own name
+            "me01-TG01": "Pikachu",
+        })
+        self.assertIn("#003      メガフシギバナex (Mega Venusaur ex)", stdout.getvalue())
+        self.assertIn("#001      Bulbasaur\n", stdout.getvalue())
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_no_english_names_skips_lookups(self, mock_fetch):
+        export = write_export([("A", "MEGA Dream ex", "001", "Japanese", 1)])
+        out = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        try:
+            with redirect_stdout(io.StringIO()):
+                missing_cards.main(["--csv", export, "--out", out, "--min-complete", "0",
+                                    "--no-english-names"])
+        finally:
+            os.unlink(export)
+            os.unlink(out)
+        urls = [c.args[0] for c in mock_fetch.call_args_list]
+        self.assertFalse([u for u in urls if "/cards/" in u or "cardmarket" in u])
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_cardmarket_download_failure_leaves_names_blank(self, mock_fetch):
+        def no_cardmarket(url, verbose=False):
+            return None if "cardmarket" in url else fake_fetch(url)
+        mock_fetch.side_effect = no_cardmarket
+        results = [{"tcgdex_lang": "ja", "missing": [{"id": "M2a-002", "name": "フシギソウ"}]}]
+        with redirect_stdout(io.StringIO()):
+            missing_cards.add_english_names(results)
+        self.assertIsNone(results[0]["missing"][0]["name_en"])
+
+    def test_cardmarket_name_cleanup(self):
+        clean = missing_cards._cardmarket_base_name
+        self.assertEqual(clean("Tangela [Poison Powder | Hook]"), "Tangela")
+        self.assertEqual(clean("AZ's Tranquility"), "AZ's Tranquility")
+        self.assertEqual(clean("Basic Fire [Holo] Energy"), "Basic Fire Energy")
+        self.assertEqual(clean("Pikachu (Top Deck)"), "Pikachu (Top Deck)")
+        self.assertEqual(clean(None), "")
 
     def test_bad_map_flag_exits(self):
         export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1)])
