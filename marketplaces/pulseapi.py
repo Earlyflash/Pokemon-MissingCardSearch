@@ -104,6 +104,7 @@ class PulseAPI(Marketplace):
     price_guide = True
     guide_label = "market price"
     guide_prefix = ""
+    market_reference = True
     guide_description = "PulseAPI's UK market price for a near-mint ungraded copy"
 
     def __init__(self, sleep=time.sleep, clock=time.time):

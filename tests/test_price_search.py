@@ -465,6 +465,25 @@ class HtmlTableTests(unittest.TestCase):
         self.assertEqual(t.rows["#001"][1][2], "£0.04")
         self.assertEqual(t.foot[-1][2], "£34.042 card(s)")
 
+    def test_listings_above_a_market_price_are_marked_without_recolouring(self):
+        guide = PriceGuide()
+        guide.market_reference = True
+        t = self.table({"euroshop": EuroShop(), "jpshop": JapanShop(), "guide": guide})
+        # #001: Euro Shop's £0.17 is the cheapest listing but above the £0.04
+        # market price, so it keeps its highlight and gains the marker.
+        euro = t.rows["#001"][0]
+        self.assertEqual(euro[0], "price best over")
+        self.assertEqual(euro[2], "£0.17 ▲▲ 325% over market · NM")
+        # #003: Japan Shop's £45.00 is above the £34.00 market price.
+        self.assertIn("over", t.rows["#003"][1][0])
+        self.assertIn("▲ 32% over market", t.rows["#003"][1][2])
+        # #002 has no market price, so nothing is marked.
+        self.assertFalse(any("over" in c[0] for c in t.rows["#002"]))
+
+    def test_no_marker_without_a_market_price_guide(self):
+        t = self.table({"euroshop": EuroShop(), "guide": PriceGuide()})
+        self.assertEqual(t.rows["#001"][0][0], "price best")
+
     def test_totals_row_sums_each_shops_cheapest_copies(self):
         t = self.table({"jpshop": JapanShop(), "euroshop": EuroShop(), "guide": PriceGuide()})
         # Euro Shop: 1.28 + 0.17; Japan Shop: 1.50 (cheapest of two) + 45.00; guide: 34.00 + 0.04.

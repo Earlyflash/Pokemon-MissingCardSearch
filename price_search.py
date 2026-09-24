@@ -336,10 +336,12 @@ CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥"}
 
 HTML_STYLE = """
 :root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d9d9de; --head: #f2f2f5;
-        --set: #e6ecf5; --best: #d4f5dc; --best-fg: #0b5d1e; --link: #0a58ca; }
+        --set: #e6ecf5; --best: #d4f5dc; --best-fg: #0b5d1e; --link: #0a58ca;
+        --over: #b3261e; }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #151517; --fg: #ececf0; --muted: #9a9aa2; --line: #34343a; --head: #202024;
-          --set: #1f2a3a; --best: #174a26; --best-fg: #b8f0c6; --link: #7fb2ff; }
+          --set: #1f2a3a; --best: #174a26; --best-fg: #b8f0c6; --link: #7fb2ff;
+          --over: #ff8a80; }
 }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
        font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -360,6 +362,7 @@ td.price { white-space: nowrap; }
 td.best { background: var(--best); }
 td.best a { color: var(--best-fg); font-weight: 600; }
 td.guide, td.guide a { color: var(--muted); }
+span.over { color: var(--over); font-weight: 600; }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 small { display: block; color: var(--muted); }
@@ -371,19 +374,30 @@ def _money(amount, currency):
     return f"{CURRENCY_SYMBOLS.get(currency, currency + ' ')}{amount:.2f}"
 
 
-def _html_cell(offers, currency, guide=False, best=False, prefix="from "):
-    """One marketplace's cell for one card: its cheapest offer, linked."""
+def _html_cell(offers, currency, guide=False, best=False, prefix="from ", market=None):
+    """One marketplace's cell for one card: its cheapest offer, linked. A
+    listing priced above `market` (the card's market price, if known) gets a
+    ▲ marker and how far over it is; the cell's colour doesn't change, so the
+    cheapest-listing highlight still shows."""
     esc = html.escape
     if not offers:
         return '<td class="price"></td>'
     price, o = offers[0]
     shown = _money(price, currency) if price is not None else f"{o.currency} {o.price}"
+    over = bool(not guide and market and price is not None and price > market)
     notes = [o.grade and f"graded {o.grade}", o.condition, len(offers) > 1 and f"+{len(offers) - 1} more"]
-    note = " · ".join(n for n in notes if n)
-    classes = "price" + (" guide" if guide else "") + (" best" if best else "")
+    note = esc(" · ".join(n for n in notes if n))
+    marker = ""
+    if over:
+        pct = int(((price - market) / market * 100).quantize(Decimal(1), ROUND_HALF_UP))
+        marker = (f' <span class="over" title="{esc(_money(price - market, currency))} above the '
+                  f'{esc(_money(market, currency))} market price">▲</span>')
+        over_note = f'<span class="over">▲ {pct}% over market</span>'
+        note = f"{over_note} · {note}" if note else over_note
+    classes = "price" + (" guide" if guide else "") + (" best" if best else "") + (" over" if over else "")
     return (f'<td class="{classes}"><a href="{esc(o.url)}" title="{esc(o.title)}" target="_blank" '
-            f'rel="noopener">{prefix if guide else ""}{esc(shown)}</a>'
-            f'{f"<small>{esc(note)}</small>" if note else ""}</td>')
+            f'rel="noopener">{prefix if guide else ""}{esc(shown)}</a>{marker}'
+            f'{f"<small>{note}</small>" if note else ""}</td>')
 
 
 def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
@@ -398,6 +412,7 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                    for p, g in columns)
     body, grand_found, grand_cards, grand_total = [], 0, 0, Decimal(0)
     shop_totals = {p.id: [Decimal(0), 0] for p, _ in columns}  # [sum of cheapest copies, cards]
+    market_ids = {p.id for p, g in columns if g and p.market_reference}
     for gi, (set_entry, cards) in enumerate(groups):
         rows, found, total = [], 0, Decimal(0)
         for c in cards:
@@ -407,6 +422,8 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                 found += 1
                 total += listed[0][0] or 0
             best_id = listed[0][1].marketplace if listed and listed[0][0] is not None else None
+            market = next((po[0] for po in guided if po[0] is not None
+                           and po[1].marketplace in market_ids), None)
             cells = []
             for p, g in columns:
                 mine = [po for po in (guided if g else listed) if po[1].marketplace == p.id]
@@ -414,7 +431,7 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                     shop_totals[p.id][0] += mine[0][0]
                     shop_totals[p.id][1] += 1
                 cells.append(_html_cell(mine, currency, guide=g, best=not g and p.id == best_id,
-                                        prefix=p.guide_prefix))
+                                        prefix=p.guide_prefix, market=market))
             if c.name_en and c.name_en != c.name:
                 card = f'{esc(c.name_en)}<small>{esc(c.name)}</small>'
             else:
@@ -433,6 +450,8 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
         f'<td class="price{" guide" if g else ""}">{esc(p.guide_prefix) if g else ""}'
         f'{esc(_money(shop_totals[p.id][0], currency))}'
         f'<small>{shop_totals[p.id][1]} card(s)</small></td>' for p, g in columns)
+    over_note = "".join(f" A ▲ marks a listing priced above {p.name}'s market price."
+                        for p, g in columns if g and p.market_reference)
     guide_note = "".join(f" {p.name} shows {p.guide_description}." for p, g in columns if g)
     if guide_note:
         guide_note += (" Those price-guide columns aren't listings and don't count towards "
@@ -449,7 +468,7 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
 <h1>Missing card prices</h1>
 <p>{grand_found}/{grand_cards} missing card(s) for sale; buying the cheapest of each comes to
 {esc(_money(grand_total, currency))} before shipping. The cheapest listing for each card is
-highlighted; click a price to open the listing.{guide_note}</p>
+highlighted; click a price to open the listing.{over_note}{guide_note}</p>
 <p>Generated {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}.</p>
 <label><input type="checkbox" id="only"> Only show cards that are for sale</label>
 <table>
