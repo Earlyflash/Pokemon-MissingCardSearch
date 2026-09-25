@@ -246,6 +246,55 @@ Each offer says how sure the match is: `exact` (matched on set and card
 number), `likely`, or `uncertain` (might be a different print; left out of
 the cheapest unless `--include-uncertain`).
 
+## Adding the missing cards to a Cardmarket wants list
+
+`wants_list.py` writes the missing cards as a list to paste into the
+"Add Deck List" box on a Cardmarket wants list, so they all go into one
+wants list in a single paste:
+
+```bash
+python wants_list.py missing_cards.csv                      # cardmarket_wants.txt
+python wants_list.py missing.json --max-price 20            # leave out cards over £20
+python wants_list.py missing.json --set "Abyss Eye" --min-price 1 --out abyss_eye.txt
+```
+
+Cardmarket's box takes one card per line as amount, name and attacks, then
+the version and expansion, sorted alphabetically
+(`1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)`);
+trainers and energy need only the name. Without the expansion Cardmarket adds
+the card from any set, and without the version any print of it in the set. Each card is matched to its Cardmarket product through TCGdex and
+the line is built from Cardmarket's own product name, so it matches what
+Cardmarket expects. It also writes a CSV next to the list with every missing
+card, its price and whether it made the list, so you can check it against
+Cardmarket's report of what it added.
+
+| Flag | Meaning |
+|---|---|
+| `--out FILE` | Where to write the list (default `cardmarket_wants.txt`). |
+| `--csv-out FILE` | The per-card CSV (default: `--out` with `.csv`). |
+| `--set NAME` | Only include this set, by name or TCGdex set id (repeatable). |
+| `--max-price AMOUNT` / `--min-price AMOUNT` | Leave out cards priced above / below this. |
+| `--price FIELD` | Price-guide figure the filters use: `trend` (default, falls back to `low` when a card has none), `low`, `avg`, `avg7` or `avg30`. |
+| `--ordered FILE` | Cards already ordered, left out of the list (default `ordered.txt` next to the script, if it exists; see below). |
+| `--skip-unpriced` | Also leave out cards Cardmarket has no price for (kept by default). |
+| `--currency CODE` | Currency for prices and filters (default `GBP`). |
+
+To avoid doubling up on cards you've already ordered, list them in
+`ordered.txt` (git-ignored), one per line: either a TCGdex card id from the
+CSV (`me01-161`) or a line copied straight from an earlier list
+(`1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)`).
+Lines starting with `#` are notes. Once a card arrives and is in your
+RareCandy collection it drops off the missing list anyway, so it can come
+out of `ordered.txt` then.
+
+Prices come from Cardmarket's public daily price guide (in EUR, converted).
+Expansion names are read off Cardmarket's sealed products ("Abyss Eye
+Booster" -> "Abyss Eye"); a set with none falls back to the set name in the
+missing cards file. Versions number same-named cards within an expansion in
+Cardmarket's product order (Mega Evolution's Mega Absol ex #086, #161 and #180
+are V.1, V.2 and V.3). The box has no way to set language or minimum
+condition, so set those on the wants list after pasting.
+
 ## How it works
 
 1. Every card in the export is grouped by **set name + print language**, so
