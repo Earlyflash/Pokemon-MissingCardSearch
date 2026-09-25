@@ -7,13 +7,17 @@ or the file from its --json flag) into a text list for Cardmarket's
 "Add Deck List" box on a wants list, so every missing card can be added to
 one wants list in a single paste.
 
-Cardmarket's box takes one card per line as "<amount> <name> <attacks>",
-e.g. "1 Dragapult ex Jet Headbutt Phantom Dive": a Pokémon's name alone
-isn't enough, its attacks (or ability) pick the right card, while trainers
-and energy need only the name. Cardmarket's own product names carry exactly
-that ("Dragapult ex [Jet Headbutt | Phantom Dive]"), so each card is tied to
-its Cardmarket product through TCGdex (the same route as the Cardmarket
-marketplace plugin) and the product name is flattened into a line.
+Cardmarket's box takes one card per line as
+"<amount> <name> <attacks> (V.<version>) (<expansion>)", e.g.
+"1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)":
+a Pokémon's name alone isn't enough, its attacks (or ability) pick the card,
+while trainers and energy need only the name. Without the expansion it adds
+the card from any set, and without the version any print within the set
+(Mega Absol ex has three in Mega Evolution: #086, #161 and #180 are V.1-3).
+Cardmarket's own product names carry the name and attacks ("Mega Absol ex
+[Terminal Period | Claw of Darkness]"), so each card is tied to its
+Cardmarket product through TCGdex (the same route as the Cardmarket
+marketplace plugin) and the line is built from that product.
 
 Prices come from Cardmarket's public daily price guide, so the list can be
 filtered by price, e.g. leave out every card worth more than £20.
@@ -43,6 +47,10 @@ from price_search import DEFAULT_CACHE_DIR, exchange_rates, load_missing
 
 PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
                 "products_singles_6.json")
+# Sealed products (boosters, boxes, tins...): the only public place that
+# names Cardmarket's expansions, via products like "Abyss Eye Booster".
+NONSINGLES_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
+                  "products_nonsingles_6.json")
 PENNY = Decimal("0.01")
 PRICE_FIELDS = ("trend", "low", "avg", "avg7", "avg30")
 
@@ -52,6 +60,48 @@ def deck_list_name(product_name):
     brackets flattened, "Tangela [Poison Powder | Hook]" -> "Tangela Poison
     Powder Hook". Anything outside the brackets is kept."""
     return " ".join(re.sub(r"[\[\]|]", " ", product_name or "").split())
+
+
+def expansion_names(nonsingles):
+    """{idExpansion: Cardmarket's expansion name}, read off its booster
+    products: "Abyss Eye Booster" -> "Abyss Eye". The shortest such name
+    wins, so "Mega Evolution Enhanced Booster" doesn't shadow "Mega Evolution
+    Booster"; "X Booster Box" is used when a set has no plain booster.
+    Expansions with neither are left out."""
+    plain, boxes = {}, {}
+    for p in nonsingles:
+        exp, name = p.get("idExpansion"), p.get("name") or ""
+        for pattern, found in ((r"(.+?) Booster", plain), (r"(.+?) Booster Box", boxes)):
+            m = re.fullmatch(pattern, name)
+            if m and exp is not None and len(m.group(1)) < len(found.get(exp, m.group(1) + "?")):
+                found[exp] = m.group(1)
+    return {**boxes, **plain}
+
+
+def versions(products):
+    """{idProduct: version number} for products that share their name with
+    another in the same expansion, numbered in idProduct order the way
+    Cardmarket numbers them (checked on Mega Evolution's three Mega Absol ex:
+    #086, #161, #180 are V.1, V.2, V.3). Products with a unique name are
+    left out: they need no version."""
+    groups = {}
+    for p in products:
+        groups.setdefault((p.get("idExpansion"), p.get("name")), []).append(p["idProduct"])
+    return {pid: n for ids in groups.values() if len(ids) > 1
+            for n, pid in enumerate(sorted(ids), 1)}
+
+
+def deck_list_line_name(product, version=None, expansion=None):
+    """Everything after the amount on a deck list line: flattened name and
+    attacks, then the version and expansion when known."""
+    parts = [deck_list_name((product or {}).get("name"))]
+    if not parts[0]:
+        return None
+    if version:
+        parts.append(f"(V.{version})")
+    if expansion:
+        parts.append(f"({expansion})")
+    return " ".join(parts)
 
 
 def card_price(row, field, rate):
@@ -85,17 +135,24 @@ def lookup_products(cards, ctx, workers=8):
         return dict(pool.map(one, cards))
 
 
-def build_rows(groups, pids, names, guide, field, rate):
+def build_rows(groups, pids, products, nonsingles, guide, field, rate):
     """One dict per missing card: where it's from, its deck list line name
-    (None if it has no Cardmarket product) and its converted price."""
+    (None if it has no Cardmarket product) and its converted price. A set
+    Cardmarket's sealed products don't name falls back to the set name in
+    the missing cards file."""
+    by_id = {p["idProduct"]: p for p in products if p.get("idProduct") is not None}
+    expansions, numbered = expansion_names(nonsingles), versions(by_id.values())
     rows = []
     for set_entry, cards in groups:
         for c in cards:
             pid = pids.get(c.card_id)
+            product = by_id.get(pid)
+            expansion = product and (expansions.get(product.get("idExpansion"))
+                                     or set_entry["set_name"])
             rows.append({
                 "set_name": set_entry["set_name"], "set_id": c.set_id, "language": c.language,
                 "local_id": c.local_id, "name": c.name_en or c.name, "card_id": c.card_id,
-                "id_product": pid, "line_name": deck_list_name(names.get(pid)) or None,
+                "id_product": pid, "line_name": deck_list_line_name(product, numbered.get(pid), expansion),
                 "price": card_price(guide.get(pid), field, rate) if pid else None,
             })
     return rows
@@ -115,9 +172,9 @@ def keep(row, min_price=None, max_price=None, skip_unpriced=False):
 
 
 def deck_list_lines(rows):
-    """"<amount> <name>" lines in first-seen order. Cards whose names come
-    out the same (two sets' copies of one card) share a line with the amount
-    added up, since Cardmarket would pick the same product for both."""
+    """"<amount> <name>" lines in first-seen order. Cards whose lines come
+    out the same (e.g. an English and a German collection of one set) share
+    a line with the amount added up."""
     counts = Counter(r["line_name"] for r in rows)
     lines, seen = [], set()
     for r in rows:
@@ -189,10 +246,9 @@ def main(argv=None):
                         verbose=args.verbose)
     print(f"Finding the Cardmarket product for {len(cards)} missing card(s) via TCGdex...")
     pids = lookup_products(cards, ctx)
-    print("Downloading Cardmarket's product list...")
+    print("Downloading Cardmarket's product lists...")
     products = ctx.fetch(PRODUCTS_URL, as_json=True, timeout=120)
-    names = {p["idProduct"]: p.get("name") for p in products.get("products", [])
-             if p.get("idProduct") is not None}
+    nonsingles = ctx.fetch(NONSINGLES_URL, as_json=True, timeout=120)
     guide, rate = {}, None
     try:
         guide = CARDMARKET.price_guide_rows(ctx)
@@ -204,7 +260,8 @@ def main(argv=None):
     if filtering and rate is None:
         sys.exit(f"Couldn't get a EUR->{currency} rate, so can't filter by price.")
 
-    rows = build_rows(groups, pids, names, guide, args.price_field, rate)
+    rows = build_rows(groups, pids, products.get("products", []),
+                      nonsingles.get("products", []), guide, args.price_field, rate)
     for r in rows:
         if not r["line_name"]:
             r["status"] = "no Cardmarket product"

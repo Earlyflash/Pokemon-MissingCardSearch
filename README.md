@@ -251,9 +251,11 @@ python wants_list.py missing.json --max-price 20            # leave out cards ov
 python wants_list.py missing.json --set "Abyss Eye" --min-price 1 --out abyss_eye.txt
 ```
 
-Cardmarket's box takes one card per line as amount, name and attacks
-(`1 Dragapult ex Jet Headbutt Phantom Dive`); trainers and energy need only
-the name. Each card is matched to its Cardmarket product through TCGdex and
+Cardmarket's box takes one card per line as amount, name and attacks, then
+the version and expansion
+(`1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)`);
+trainers and energy need only the name. Without the expansion Cardmarket adds
+the card from any set, and without the version any print of it in the set. Each card is matched to its Cardmarket product through TCGdex and
 the line is built from Cardmarket's own product name, so it matches what
 Cardmarket expects. It also writes a CSV next to the list with every missing
 card, its price and whether it made the list, so you can check it against
@@ -270,8 +272,12 @@ Cardmarket's report of what it added.
 | `--currency CODE` | Currency for prices and filters (default `GBP`). |
 
 Prices come from Cardmarket's public daily price guide (in EUR, converted).
-The lines don't name an expansion, so Cardmarket adds each as that card from
-any expansion; reprints with the same name and attacks share one line.
+Expansion names are read off Cardmarket's sealed products ("Abyss Eye
+Booster" -> "Abyss Eye"); a set with none falls back to the set name in the
+missing cards file. Versions number same-named cards within an expansion in
+Cardmarket's product order (Mega Evolution's Mega Absol ex #086, #161 and #180
+are V.1, V.2 and V.3). The box has no way to set language or minimum
+condition, so set those on the wants list after pasting.
 
 ## How it works
 

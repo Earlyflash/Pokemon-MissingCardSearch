@@ -39,11 +39,19 @@ TCGDEX = {
     "sv10-001": 1, "sv10-002": 2, "sv10-003": 3, "M2a-001": 2, "M2a-002": 5,
 }
 PRODUCTS = {"products": [
-    {"idProduct": 1, "name": "Dragapult ex [Jet Headbutt | Phantom Dive]"},
-    {"idProduct": 2, "name": "Switch"},
-    {"idProduct": 3, "name": "Charizard ex [Infernal Reign | Burning Darkness]"},
-    {"idProduct": 5, "name": "Pikachu [Thunder Jolt]"},
+    {"idProduct": 1, "name": "Dragapult ex [Jet Headbutt | Phantom Dive]", "idExpansion": 10},
+    {"idProduct": 2, "name": "Switch", "idExpansion": 20},
+    {"idProduct": 3, "name": "Charizard ex [Infernal Reign | Burning Darkness]", "idExpansion": 10},
+    {"idProduct": 4, "name": "Charizard ex [Infernal Reign | Burning Darkness]", "idExpansion": 10},
+    {"idProduct": 5, "name": "Pikachu [Thunder Jolt]", "idExpansion": 20},
 ]}
+NONSINGLES = {"products": [
+    {"idProduct": 90, "name": "Destined Rivals Booster", "idExpansion": 10},
+    {"idProduct": 91, "name": "Destined Rivals Booster Box", "idExpansion": 10},
+    {"idProduct": 92, "name": "Destined Rivals Enhanced Booster", "idExpansion": 10},
+    {"idProduct": 93, "name": "Some Tin", "idExpansion": 20},
+]}
+DR, MD = "(Destined Rivals)", "(MEGA Dream ex)"
 GUIDE = {"priceGuides": [
     {"idProduct": 1, "low": 1.0, "trend": 5.0},
     {"idProduct": 2, "low": 0.02, "trend": 0.1},
@@ -55,6 +63,8 @@ GUIDE = {"priceGuides": [
 def fake_fetch(self, url, headers=None, as_json=False, timeout=30):
     if url == wants_list.PRODUCTS_URL:
         return PRODUCTS
+    if url == wants_list.NONSINGLES_URL:
+        return NONSINGLES
     if url == cardmarket.PRICE_GUIDE_URL:
         return GUIDE
     card_id = url.rsplit("/", 1)[1]
@@ -71,6 +81,30 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(wants_list.deck_list_name("Magnezone [Magnetic Draw | Lost Burn] Prime"),
                          "Magnezone Magnetic Draw Lost Burn Prime")
         self.assertEqual(wants_list.deck_list_name(None), "")
+
+    def test_expansion_names_from_boosters(self):
+        self.assertEqual(wants_list.expansion_names([
+            {"name": "Mega Evolution Enhanced Booster", "idExpansion": 1},
+            {"name": "Mega Evolution Booster", "idExpansion": 1},
+            {"name": "Abyss Eye Booster Box Case", "idExpansion": 2},
+            {"name": "Abyss Eye Booster Box", "idExpansion": 2},
+            {"name": "Lillie's Support Gift Box", "idExpansion": 3},
+        ]), {1: "Mega Evolution", 2: "Abyss Eye"})
+
+    def test_versions_in_product_order(self):
+        products = [{"idProduct": 851251, "name": "Mega Absol ex", "idExpansion": 6209},
+                    {"idProduct": 851157, "name": "Mega Absol ex", "idExpansion": 6209},
+                    {"idProduct": 851232, "name": "Mega Absol ex", "idExpansion": 6209},
+                    {"idProduct": 900000, "name": "Mega Absol ex", "idExpansion": 1},
+                    {"idProduct": 5, "name": "Switch", "idExpansion": 6209}]
+        self.assertEqual(wants_list.versions(products), {851157: 1, 851232: 2, 851251: 3})
+
+    def test_line_name(self):
+        product = {"name": "Mega Absol ex [Terminal Period | Claw of Darkness]"}
+        self.assertEqual(wants_list.deck_list_line_name(product, 2, "Mega Evolution"),
+                         "Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)")
+        self.assertEqual(wants_list.deck_list_line_name({"name": "Switch"}, None, "X"), "Switch (X)")
+        self.assertIsNone(wants_list.deck_list_line_name(None, None, "X"))
 
     def test_card_price_converts_and_falls_back_to_low(self):
         rate = Decimal("0.85")
@@ -110,9 +144,9 @@ class TestMain(unittest.TestCase):
 
     def test_every_card_with_a_product(self):
         lines, rows, log = self.run_main()
-        self.assertEqual(lines, ["1 Dragapult ex Jet Headbutt Phantom Dive", "2 Switch",
-                                 "1 Charizard ex Infernal Reign Burning Darkness",
-                                 "1 Pikachu Thunder Jolt"])
+        self.assertEqual(lines, [f"1 Dragapult ex Jet Headbutt Phantom Dive {DR}", f"1 Switch {DR}",
+                                 f"1 Charizard ex Infernal Reign Burning Darkness (V.1) {DR}",
+                                 f"1 Switch {MD}", f"1 Pikachu Thunder Jolt {MD}"])
         self.assertEqual(len(rows), 6)
         nobody = next(r for r in rows if r["TCGdex Card ID"] == "sv10-004")
         self.assertEqual(nobody["In List"], "no Cardmarket product")
@@ -120,18 +154,18 @@ class TestMain(unittest.TestCase):
 
     def test_max_price_leaves_out_expensive_cards(self):
         lines, rows, _ = self.run_main("--max-price", "20")
-        self.assertNotIn("1 Charizard ex Infernal Reign Burning Darkness", lines)
+        self.assertFalse([line for line in lines if "Charizard" in line])
         charizard = next(r for r in rows if r["TCGdex Card ID"] == "sv10-003")
         self.assertEqual((charizard["Price (GBP)"], charizard["In List"]), ("30.00", "price filter"))
 
     def test_low_price_field(self):
         lines, _, _ = self.run_main("--max-price", "1", "--price", "low")
-        self.assertEqual(lines, ["1 Dragapult ex Jet Headbutt Phantom Dive", "2 Switch",
-                                 "1 Pikachu Thunder Jolt"])
+        self.assertEqual(lines, [f"1 Dragapult ex Jet Headbutt Phantom Dive {DR}", f"1 Switch {DR}",
+                                 f"1 Switch {MD}", f"1 Pikachu Thunder Jolt {MD}"])
 
     def test_set_filter(self):
         lines, _, _ = self.run_main("--set", "M2a")
-        self.assertEqual(lines, ["1 Switch", "1 Pikachu Thunder Jolt"])
+        self.assertEqual(lines, [f"1 Switch {MD}", f"1 Pikachu Thunder Jolt {MD}"])
 
 
 if __name__ == "__main__":
