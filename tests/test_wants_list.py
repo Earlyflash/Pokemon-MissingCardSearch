@@ -120,6 +120,16 @@ class TestHelpers(unittest.TestCase):
         self.assertTrue(wants_list.keep({"price": None}, max_price=Decimal("20")))
         self.assertFalse(wants_list.keep({"price": None}, skip_unpriced=True))
 
+    def test_read_ordered(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "ordered.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("me01-161\n2 Switch (Black Bolt)\nBlaine's Quiz #1 (Gym Heroes)\n# note\n")
+            ids, names = wants_list.read_ordered(path)
+            self.assertEqual(wants_list.read_ordered(os.path.join(d, "none.txt")), (set(), {}))
+        self.assertEqual(ids, {"me01-161"})
+        self.assertEqual(names, {"switch (black bolt)": 2, "blaine's quiz #1 (gym heroes)": 1})
+
     def test_lines_merge_identical_names(self):
         rows = [{"line_name": "Switch"}, {"line_name": "Pikachu"}, {"line_name": "Switch"},
                 {"line_name": "Poké Pad"}, {"line_name": "air Balloon"}]
@@ -137,7 +147,8 @@ class TestMain(unittest.TestCase):
                 json.dump(MISSING, f)
             out = os.path.join(d, "wants.txt")
             with redirect_stdout(io.StringIO()) as log:
-                wants_list.main([src, "--out", out, "--no-cache", *args])
+                wants_list.main([src, "--out", out, "--no-cache",
+                                 "--ordered", os.path.join(d, "none.txt"), *args])
             with open(out, encoding="utf-8") as f:
                 lines = f.read().splitlines()
             with open(os.path.join(d, "wants.csv"), encoding="utf-8-sig") as f:
@@ -164,6 +175,18 @@ class TestMain(unittest.TestCase):
         lines, _, _ = self.run_main("--max-price", "1", "--price", "low")
         self.assertEqual(lines, [f"1 Dragapult ex Jet Headbutt Phantom Dive {DR}",
                                  f"1 Pikachu Thunder Jolt {MD}", f"1 Switch {DR}", f"1 Switch {MD}"])
+
+    def test_already_ordered_cards_are_left_out(self):
+        with tempfile.TemporaryDirectory() as d:
+            ordered = os.path.join(d, "ordered.txt")
+            with open(ordered, "w", encoding="utf-8") as f:
+                f.write("# ordered 2026-09-25\nSV10-001\n\n1x Switch (MEGA Dream ex)\n")
+            lines, rows, log = self.run_main("--ordered", ordered)
+        self.assertEqual(lines, [f"1 Charizard ex Infernal Reign Burning Darkness (V.1) {DR}",
+                                 f"1 Pikachu Thunder Jolt {MD}", f"1 Switch {DR}"])
+        self.assertEqual(sorted(r["TCGdex Card ID"] for r in rows if r["In List"] == "already ordered"),
+                         ["M2a-001", "sv10-001"])
+        self.assertIn("2 left out as already ordered", log)
 
     def test_set_filter(self):
         lines, _, _ = self.run_main("--set", "M2a")

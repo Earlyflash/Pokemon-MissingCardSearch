@@ -52,6 +52,7 @@ PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/
 # names Cardmarket's expansions, via products like "Abyss Eye Booster".
 NONSINGLES_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
                   "products_nonsingles_6.json")
+DEFAULT_ORDERED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ordered.txt")
 PENNY = Decimal("0.01")
 PRICE_FIELDS = ("trend", "low", "avg", "avg7", "avg30")
 
@@ -172,6 +173,48 @@ def keep(row, min_price=None, max_price=None, skip_unpriced=False):
     return True
 
 
+def read_ordered(path):
+    """Cards already ordered, from a text file with one per line: either a
+    TCGdex card id ("me01-161") or a line copied from an earlier wants list
+    ("1 Mega Absol ex ... (V.2) (Mega Evolution)"; the amount says how many
+    are on order, 1 if left off). Blank lines and lines starting with # are skipped.
+    Returns (set of card ids, Counter of wants list names). A missing file
+    means nothing is on order."""
+    ids, names = set(), Counter()
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return ids, names
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):  # whole-line only: "Blaine's Quiz #1" is a card
+            continue
+        m = re.fullmatch(r"(\d+)\s*[xX]?\s+(.+)", line)
+        amount, text = (int(m.group(1)), m.group(2).strip()) if m else (1, line)
+        if not m and re.fullmatch(r"[^\s()]+-[^\s()]+", line):
+            ids.add(line.lower())
+        else:
+            names[text.casefold()] += amount
+    return ids, names
+
+
+def mark_ordered(rows, ordered):
+    """Set status "already ordered" on rows covered by `ordered` (from
+    read_ordered): every row with a listed card id, and for wants list
+    names, as many rows with that line as the amount on order."""
+    ids, names = ordered[0], Counter(ordered[1])
+    for r in rows:
+        if r["status"] != "yes":
+            continue
+        key = (r["line_name"] or "").casefold()
+        if r["card_id"].lower() in ids:
+            r["status"] = "already ordered"
+        elif names[key] > 0:
+            names[key] -= 1
+            r["status"] = "already ordered"
+
+
 def deck_list_lines(rows):
     """"<amount> <name>" lines in alphabetical order (ignoring case and
     accents, so "Poké Pad" sorts with "Poke..."). Cards whose lines come out
@@ -218,6 +261,10 @@ def build_arg_parser():
                    help="Leave out cards priced above this, in --currency (e.g. 20).")
     p.add_argument("--min-price", type=Decimal, metavar="AMOUNT",
                    help="Leave out cards priced below this, in --currency.")
+    p.add_argument("--ordered", default=DEFAULT_ORDERED, metavar="FILE",
+                   help="Cards already ordered, left out of the list: one per line, as a TCGdex "
+                        "card id (me01-161) or a line copied from an earlier list (default: "
+                        "ordered.txt next to this script, if it exists).")
     p.add_argument("--skip-unpriced", action="store_true",
                    help="With a price filter, also leave out cards Cardmarket has no price for.")
     p.add_argument("--price", dest="price_field", choices=PRICE_FIELDS, default="trend",
@@ -271,6 +318,8 @@ def main(argv=None):
             r["status"] = "price filter"
         else:
             r["status"] = "yes"
+    ordered = read_ordered(args.ordered)
+    mark_ordered(rows, ordered)
     listed = [r for r in rows if r["status"] == "yes"]
     lines = deck_list_lines(listed)
     with open(args.out, "w", encoding="utf-8") as f:
@@ -285,6 +334,9 @@ def main(argv=None):
           f"together about {currency} {total:.2f} at Cardmarket's {args.price_field} price.")
     if filtered:
         print(f"{len(filtered)} left out by the price filter.")
+    on_order = sum(1 for r in rows if r["status"] == "already ordered")
+    if on_order:
+        print(f"{on_order} left out as already ordered ({args.ordered}).")
     if no_product:
         print(f"{len(no_product)} left out because TCGdex has no Cardmarket product for them:")
         for r in no_product:

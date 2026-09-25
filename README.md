@@ -268,8 +268,17 @@ Cardmarket's report of what it added.
 | `--set NAME` | Only include this set, by name or TCGdex set id (repeatable). |
 | `--max-price AMOUNT` / `--min-price AMOUNT` | Leave out cards priced above / below this. |
 | `--price FIELD` | Price-guide figure the filters use: `trend` (default, falls back to `low` when a card has none), `low`, `avg`, `avg7` or `avg30`. |
+| `--ordered FILE` | Cards already ordered, left out of the list (default `ordered.txt` next to the script, if it exists; see below). |
 | `--skip-unpriced` | Also leave out cards Cardmarket has no price for (kept by default). |
 | `--currency CODE` | Currency for prices and filters (default `GBP`). |
+
+To avoid doubling up on cards you've already ordered, list them in
+`ordered.txt` (git-ignored), one per line: either a TCGdex card id from the
+CSV (`me01-161`) or a line copied straight from an earlier list
+(`1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)`).
+Lines starting with `#` are notes. Once a card arrives and is in your
+RareCandy collection it drops off the missing list anyway, so it can come
+out of `ordered.txt` then.
 
 Prices come from Cardmarket's public daily price guide (in EUR, converted).
 Expansion names are read off Cardmarket's sealed products ("Abyss Eye
