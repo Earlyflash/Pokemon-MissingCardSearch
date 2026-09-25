@@ -36,6 +36,7 @@ import csv
 import os
 import re
 import sys
+import unicodedata
 import urllib.error
 import urllib.parse
 from collections import Counter
@@ -172,16 +173,17 @@ def keep(row, min_price=None, max_price=None, skip_unpriced=False):
 
 
 def deck_list_lines(rows):
-    """"<amount> <name>" lines in first-seen order. Cards whose lines come
-    out the same (e.g. an English and a German collection of one set) share
-    a line with the amount added up."""
+    """"<amount> <name>" lines in alphabetical order (ignoring case and
+    accents, so "Poké Pad" sorts with "Poke..."). Cards whose lines come out
+    the same (e.g. an English and a German collection of one set) share a
+    line with the amount added up."""
     counts = Counter(r["line_name"] for r in rows)
-    lines, seen = [], set()
-    for r in rows:
-        if r["line_name"] not in seen:
-            seen.add(r["line_name"])
-            lines.append(f"{counts[r['line_name']]} {r['line_name']}")
-    return lines
+    return [f"{counts[name]} {name}" for name in sorted(counts, key=_sort_key)]
+
+
+def _sort_key(text):
+    plain = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return plain.casefold(), text
 
 
 def write_csv(rows, currency, path):

@@ -252,7 +252,7 @@ python wants_list.py missing.json --set "Abyss Eye" --min-price 1 --out abyss_ey
 ```
 
 Cardmarket's box takes one card per line as amount, name and attacks, then
-the version and expansion
+the version and expansion, sorted alphabetically
 (`1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)`);
 trainers and energy need only the name. Without the expansion Cardmarket adds
 the card from any set, and without the version any print of it in the set. Each card is matched to its Cardmarket product through TCGdex and

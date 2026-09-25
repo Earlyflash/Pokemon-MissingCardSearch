@@ -121,8 +121,10 @@ class TestHelpers(unittest.TestCase):
         self.assertFalse(wants_list.keep({"price": None}, skip_unpriced=True))
 
     def test_lines_merge_identical_names(self):
-        rows = [{"line_name": "Switch"}, {"line_name": "Pikachu"}, {"line_name": "Switch"}]
-        self.assertEqual(wants_list.deck_list_lines(rows), ["2 Switch", "1 Pikachu"])
+        rows = [{"line_name": "Switch"}, {"line_name": "Pikachu"}, {"line_name": "Switch"},
+                {"line_name": "Poké Pad"}, {"line_name": "air Balloon"}]
+        self.assertEqual(wants_list.deck_list_lines(rows),
+                         ["1 air Balloon", "1 Pikachu", "1 Poké Pad", "2 Switch"])
 
 
 @patch.object(wants_list.SearchContext, "fetch", fake_fetch)
@@ -144,9 +146,9 @@ class TestMain(unittest.TestCase):
 
     def test_every_card_with_a_product(self):
         lines, rows, log = self.run_main()
-        self.assertEqual(lines, [f"1 Dragapult ex Jet Headbutt Phantom Dive {DR}", f"1 Switch {DR}",
-                                 f"1 Charizard ex Infernal Reign Burning Darkness (V.1) {DR}",
-                                 f"1 Switch {MD}", f"1 Pikachu Thunder Jolt {MD}"])
+        self.assertEqual(lines, [f"1 Charizard ex Infernal Reign Burning Darkness (V.1) {DR}",
+                                 f"1 Dragapult ex Jet Headbutt Phantom Dive {DR}",
+                                 f"1 Pikachu Thunder Jolt {MD}", f"1 Switch {DR}", f"1 Switch {MD}"])
         self.assertEqual(len(rows), 6)
         nobody = next(r for r in rows if r["TCGdex Card ID"] == "sv10-004")
         self.assertEqual(nobody["In List"], "no Cardmarket product")
@@ -160,12 +162,12 @@ class TestMain(unittest.TestCase):
 
     def test_low_price_field(self):
         lines, _, _ = self.run_main("--max-price", "1", "--price", "low")
-        self.assertEqual(lines, [f"1 Dragapult ex Jet Headbutt Phantom Dive {DR}", f"1 Switch {DR}",
-                                 f"1 Switch {MD}", f"1 Pikachu Thunder Jolt {MD}"])
+        self.assertEqual(lines, [f"1 Dragapult ex Jet Headbutt Phantom Dive {DR}",
+                                 f"1 Pikachu Thunder Jolt {MD}", f"1 Switch {DR}", f"1 Switch {MD}"])
 
     def test_set_filter(self):
         lines, _, _ = self.run_main("--set", "M2a")
-        self.assertEqual(lines, [f"1 Switch {MD}", f"1 Pikachu Thunder Jolt {MD}"])
+        self.assertEqual(lines, [f"1 Pikachu Thunder Jolt {MD}", f"1 Switch {MD}"])
 
 
 if __name__ == "__main__":
