@@ -44,7 +44,8 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from marketplaces.base import SearchContext
 from marketplaces.cardmarket import PLUGIN as CARDMARKET, PRODUCT_URL, TCGDEX_CARD_URL, product_id
-from price_search import DEFAULT_CACHE_DIR, exchange_rates, load_missing
+from price_search import (DEFAULT_CACHE_DIR, DEFAULT_ORDERED, exchange_rates, load_missing,
+                          read_ordered)
 
 PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
                 "products_singles_6.json")
@@ -52,7 +53,6 @@ PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/
 # names Cardmarket's expansions, via products like "Abyss Eye Booster".
 NONSINGLES_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
                   "products_nonsingles_6.json")
-DEFAULT_ORDERED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ordered.txt")
 PENNY = Decimal("0.01")
 PRICE_FIELDS = ("trend", "low", "avg", "avg7", "avg30")
 
@@ -171,32 +171,6 @@ def keep(row, min_price=None, max_price=None, skip_unpriced=False):
     if min_price is not None and price < min_price:
         return False
     return True
-
-
-def read_ordered(path):
-    """Cards already ordered, from a text file with one per line: either a
-    TCGdex card id ("me01-161") or a line copied from an earlier wants list
-    ("1 Mega Absol ex ... (V.2) (Mega Evolution)"; the amount says how many
-    are on order, 1 if left off). Blank lines and lines starting with # are skipped.
-    Returns (set of card ids, Counter of wants list names). A missing file
-    means nothing is on order."""
-    ids, names = set(), Counter()
-    try:
-        with open(path, encoding="utf-8-sig") as f:
-            lines = f.read().splitlines()
-    except FileNotFoundError:
-        return ids, names
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#"):  # whole-line only: "Blaine's Quiz #1" is a card
-            continue
-        m = re.fullmatch(r"(\d+)\s*[xX]?\s+(.+)", line)
-        amount, text = (int(m.group(1)), m.group(2).strip()) if m else (1, line)
-        if not m and re.fullmatch(r"[^\s()]+-[^\s()]+", line):
-            ids.add(line.lower())
-        else:
-            names[text.casefold()] += amount
-    return ids, names
 
 
 def mark_ordered(rows, ordered):
