@@ -283,7 +283,7 @@ class RankingTests(unittest.TestCase):
 
 class MainTests(unittest.TestCase):
     def run_main(self, *extra, plugins=None, guide_csv=None, html_out=None, missing=MISSING,
-                 env_file=os.devnull):
+                 env_file=os.devnull, ordered=os.devnull):
         out_csv = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
         html_out = html_out or tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
         guide_csv = guide_csv or tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
@@ -295,7 +295,7 @@ class MainTests(unittest.TestCase):
             os.environ.pop("KEYED_SHOP_TOKEN", None)
             price_search.main([write_json(missing), "--out", out_csv, "--guide-out", guide_csv,
                                "--html-out", html_out, "--no-cache", "--env-file", env_file,
-                               *extra])
+                               "--ordered", ordered, *extra])
         self.progress = err.getvalue()
         with open(out_csv, encoding="utf-8") as f:
             return list(csv.DictReader(f)), out.getvalue()
@@ -430,12 +430,14 @@ class HtmlTableTests(unittest.TestCase):
             elif self.cell is not None:
                 self.cell[2] += data
 
-    def table(self, plugins, missing=MISSING):
+    def table(self, plugins, missing=MISSING, ordered=os.devnull):
         html_out = tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
-        MainTests.run_main(MainTests(), plugins=plugins, html_out=html_out, missing=missing)
+        MainTests.run_main(MainTests(), plugins=plugins, html_out=html_out, missing=missing,
+                           ordered=ordered)
         parser = self.Cells()
         with open(html_out, encoding="utf-8") as f:
-            parser.feed(f.read())
+            self.html = f.read()
+        parser.feed(self.html)
         return parser
 
     def test_one_row_per_card_and_cheapest_highlighted_and_linked(self):
@@ -520,6 +522,75 @@ class HtmlTableTests(unittest.TestCase):
         self.assertEqual(t.names, {"#002": "Ivysaurフシギソウ", "#003": "メガフシギバナex",
                                    "#001": "Bulbasaur"})
 
+    def test_sets_in_set_number_order_each_sortable_by_missing_and_cost(self):
+        missing = json.loads(json.dumps(MISSING))
+        missing["sets"].reverse()
+        t = self.table({"jpshop": JapanShop(), "euroshop": EuroShop()}, missing=missing)
+        self.assertEqual(list(t.rows), ["#002", "#003", "#001"])
+        self.assertIn('<tbody data-set="0" data-missing="2" data-unsold="0" data-cost="46.28">',
+                      self.html)
+        self.assertIn('<tbody data-set="1" data-missing="1" data-unsold="0" data-cost="0.17">',
+                      self.html)
+        self.assertIn('<select id="sort">', self.html)
+
+    def test_cards_already_ordered_are_shaded_and_tagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            ordered = os.path.join(d, "ordered.txt")
+            with open(ordered, "w", encoding="utf-8") as f:
+                f.write("# Cardmarket order\nM2a-003\nME01-001\n1 Some wants list line\n")
+            t = self.table({"euroshop": EuroShop()}, ordered=ordered)
+        self.assertEqual(t.names["#003"], "メガフシギバナexordered")
+        self.assertEqual(t.names["#001"], "Bulbasaurordered")
+        self.assertEqual(t.names["#002"], "フシギソウ")
+        self.assertIn('<tr class="unsold ordered">', self.html)
+        self.assertIn('<tr class="sold ordered">', self.html)
+        self.assertIn("2 card(s) already ordered", self.html)
+
+    def test_no_ordered_file_tags_nothing(self):
+        t = self.table({"euroshop": EuroShop()}, ordered=os.path.join(tempfile.gettempdir(), "none.txt"))
+        self.assertNotIn("ordered", "".join(t.names.values()))
+        self.assertNotIn("already ordered are shaded", self.html)
+
+
+class HtmlOnlyTests(unittest.TestCase):
+    PLUGINS = {"jpshop": JapanShop(), "euroshop": EuroShop(), "guide": PriceGuide()}
+
+    @staticmethod
+    def page(path):
+        with open(path, encoding="utf-8") as f:
+            return "".join(line for line in f if not line.startswith("<p>Generated "))
+
+    def test_redraws_the_same_table_from_the_csvs_without_searching(self):
+        with tempfile.TemporaryDirectory() as d:
+            out, guide = os.path.join(d, "offers.csv"), os.path.join(d, "guide.csv")
+            first, second = os.path.join(d, "1.html"), os.path.join(d, "2.html")
+            MainTests.run_main(MainTests(), "--out", out, plugins=self.PLUGINS, guide_csv=guide,
+                               html_out=first)
+            with patch.object(price_search, "search_all", side_effect=AssertionError("searched")), \
+                    patch.object(price_search, "fetch_rate", side_effect=AssertionError("fetched")):
+                MainTests.run_main(MainTests(), "--out", out, "--html-only", plugins=self.PLUGINS,
+                                   guide_csv=guide, html_out=second)
+            self.assertEqual(self.page(second), self.page(first))
+
+    def test_cards_dropped_from_the_missing_list_drop_out(self):
+        with tempfile.TemporaryDirectory() as d:
+            out, guide = os.path.join(d, "offers.csv"), os.path.join(d, "guide.csv")
+            html_out = os.path.join(d, "t.html")
+            MainTests.run_main(MainTests(), "--out", out, plugins=self.PLUGINS, guide_csv=guide)
+            missing = json.loads(json.dumps(MISSING))
+            del missing["sets"][0]["missing"][1]  # #003 arrived
+            MainTests.run_main(MainTests(), "--out", out, "--html-only", plugins=self.PLUGINS,
+                               guide_csv=guide, html_out=html_out, missing=missing)
+            page = self.page(html_out)
+        self.assertIn("#002", page)
+        self.assertNotIn("#003", page)
+
+    def test_no_csvs_is_a_clear_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(SystemExit) as e:
+                MainTests.run_main(MainTests(), "--out", os.path.join(d, "none.csv"), "--html-only",
+                                   guide_csv=os.path.join(d, "none2.csv"))
+        self.assertIn("Run a search first", str(e.exception))
 
 class SearchContextTests(unittest.TestCase):
     class FakeResponse(io.BytesIO):

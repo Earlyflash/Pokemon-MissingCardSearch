@@ -25,9 +25,11 @@ import datetime
 import html
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
+from collections import Counter
 from decimal import Decimal, ROUND_HALF_UP
 
 import marketplaces
@@ -35,6 +37,8 @@ from marketplaces.base import MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer,
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CACHE_DIR = os.path.join(SCRIPT_DIR, ".price_cache")
+# Cards already bought but not yet in the collection (see read_ordered).
+DEFAULT_ORDERED = os.path.join(SCRIPT_DIR, "ordered.txt")
 # Same free exchange-rate service RareCandyExporter's --currency uses (it has
 # since moved from api.frankfurter.app, which now redirects here).
 RATES_URL = "https://api.frankfurter.dev/v1/latest?from={src}&to={dst}"
@@ -125,6 +129,32 @@ def load_missing(path, only_sets=()):
         if cards:
             groups.append((s, cards))
     return groups
+
+
+def read_ordered(path):
+    """Cards already ordered, from a text file with one per line: either a
+    TCGdex card id ("me01-161") or a line copied from an earlier wants list
+    ("1 Mega Absol ex ... (V.2) (Mega Evolution)"; the amount says how many
+    are on order, 1 if left off). Blank lines and lines starting with # are skipped.
+    Returns (set of card ids, Counter of wants list names). A missing file
+    means nothing is on order."""
+    ids, names = set(), Counter()
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return ids, names
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):  # whole-line only: "Blaine's Quiz #1" is a card
+            continue
+        m = re.fullmatch(r"(\d+)\s*[xX]?\s+(.+)", line)
+        amount, text = (int(m.group(1)), m.group(2).strip()) if m else (1, line)
+        if not m and re.fullmatch(r"[^\s()]+-[^\s()]+", line):
+            ids.add(line.lower())
+        else:
+            names[text.casefold()] += amount
+    return ids, names
 
 
 # ---------------------------------------------------------------- plugins --
@@ -332,22 +362,80 @@ def write_csv(groups, ranked, currency, path, cheapest_only=False):
     return rows
 
 
+def read_offers_csv(groups, path):
+    """(ranked, currency, marketplace ids) rebuilt from a CSV written by
+    write_csv, in rank_offers' shape, for redrawing the HTML table without
+    searching again. Rows for cards no longer in `groups` (bought since, or
+    another --set) are dropped. (None, None, set()) if there's no file."""
+    ranked = {(gi, c.card_id): [] for gi, (_, cards) in enumerate(groups) for c in cards}
+    where = {(c.set_id, c.language, c.card_id): gi
+             for gi, (_, cards) in enumerate(groups) for c in cards}
+    try:
+        f = open(path, encoding="utf-8-sig", newline="")
+    except FileNotFoundError:
+        return None, None, set()
+    ids = set()
+    with f:
+        reader = csv.DictReader(f)
+        price_col = next((c for c in reader.fieldnames or [] if c.startswith("Price (")), None)
+        if price_col is None:
+            sys.exit(f"{path} isn't a price_search.py CSV: no Price column.")
+        for row in reader:
+            gi = where.get((row["TCGdex Set"], row["Language"], row["TCGdex Card ID"]))
+            if gi is None:
+                continue
+            o = Offer(marketplace=row["Marketplace"], card_id=row["TCGdex Card ID"], url=row["URL"],
+                      price=Decimal(row["Listed Price"]), currency=row["Listed Currency"],
+                      title=row["Listing Title"], match=row["Match"],
+                      condition=row["Condition"] or None, grade=row["Grade"] or None,
+                      seller=row["Seller"] or None,
+                      quantity=int(row["Quantity"]) if row["Quantity"] else None)
+            ranked[(gi, o.card_id)].append((Decimal(row[price_col]) if row[price_col] else None, o))
+            ids.add(o.marketplace)
+    for lst in ranked.values():
+        lst.sort(key=lambda po: (po[0] is None, po[0] or 0))
+    return ranked, price_col[len("Price ("):-1], ids
+
+
+def redraw_html(groups, available, args):
+    """--html-only: write the HTML table from the last run's CSVs."""
+    listing_ranked, listing_currency, listing_ids = read_offers_csv(groups, args.out)
+    guide_ranked, guide_currency, guide_ids = read_offers_csv(groups, args.guide_out)
+    if listing_ranked is None and guide_ranked is None:
+        sys.exit(f"Nothing to redraw from: neither {args.out} nor {args.guide_out} exists. "
+                 "Run a search first.")
+    currency = listing_currency or guide_currency
+    unknown = sorted((listing_ids | guide_ids) - set(available))
+    if unknown:
+        print(f"Left out marketplace(s) no longer installed: {', '.join(unknown)}.")
+    # The marketplaces a search would run, so shops that had none of the
+    # cards still get their (empty) column, plus any others in the CSVs.
+    plugins, _ = select_plugins(available, args.marketplaces)
+    plugins += [available[pid] for pid in sorted((listing_ids | guide_ids) & set(available)
+                                                 - {p.id for p in plugins})]
+    html_out = args.html_out or os.path.join(os.path.dirname(args.out), "price_table.html")
+    write_html(groups, listing_ranked, guide_ranked, plugins, currency, html_out,
+               ordered=read_ordered(args.ordered)[0])
+    print(f"Redrew the price table from {args.out} and {args.guide_out} (no marketplaces "
+          f"searched) to {os.path.abspath(html_out)}")
+
+
 CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥"}
 
 HTML_STYLE = """
 :root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d9d9de; --head: #f2f2f5;
         --set: #e6ecf5; --best: #d4f5dc; --best-fg: #0b5d1e; --link: #0a58ca;
-        --over: #b3261e; --under: #0b6b2e; }
+        --over: #b3261e; --under: #0b6b2e; --ordered: #fff3c4; --ordered-fg: #7a5200; }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #151517; --fg: #ececf0; --muted: #9a9aa2; --line: #34343a; --head: #202024;
           --set: #1f2a3a; --best: #174a26; --best-fg: #b8f0c6; --link: #7fb2ff;
-          --over: #ff8a80; --under: #7ee2a0; }
+          --over: #ff8a80; --under: #7ee2a0; --ordered: #3d3212; --ordered-fg: #ffd978; }
 }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
        font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
 h1 { font-size: 20px; margin: 0 0 4px; }
 p { margin: 4px 0; color: var(--muted); }
-label { display: inline-block; margin: 8px 0 12px; }
+label { display: inline-block; margin: 8px 16px 12px 0; }
 table { border-collapse: collapse; min-width: 100%; }
 th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left;
          vertical-align: top; }
@@ -378,6 +466,12 @@ a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 small { display: block; color: var(--muted); font-size: 11px; }
 body.for-sale-only tr.unsold { display: none; }
+body.hide-ordered tr.ordered { display: none; }
+tr.ordered td:not(.best) { background: var(--ordered); }
+tr.ordered td.card, tr.ordered td.num { color: var(--ordered-fg); }
+span.ordered { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px;
+               background: var(--ordered-fg); color: var(--bg); font-size: 10px; font-weight: 600;
+               text-transform: uppercase; letter-spacing: .03em; }
 """
 
 
@@ -417,14 +511,24 @@ def _html_cell(offers, currency, guide=False, best=False, prefix="from ", market
             f'{f"<small title={chr(34)}{esc(note_title)}{chr(34)}>{esc(note)}</small>" if note else ""}</td>')
 
 
-def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
+def _set_number_key(set_entry):
+    """Sort key putting sets in set number order: M1L, M1S, M2, M2a, M3...
+    (digits compared as numbers, so M10 comes after M9)."""
+    parts = re.split(r"(\d+)", set_entry["set_id"].lower())
+    return [int(x) if i % 2 else x for i, x in enumerate(parts)], set_entry["language"]
+
+
+def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path, ordered=frozenset()):
     """A table with one row per missing card and one column per marketplace.
     Each cell is that marketplace's cheapest copy, linked to the listing; the
     cheapest listing for the card is highlighted. Price-guide marketplaces get
     their own columns, before the shops, as "from" prices and are never
     highlighted. A market price guide (e.g. PulseAPI) comes first, straight
     after the card name, in bold, and stays in view with the card number and
-    name when scrolling sideways."""
+    name when scrolling sideways. Cards whose TCGdex id is in `ordered`
+    (lower case, from read_ordered) are shaded and tagged as already ordered,
+    so they aren't bought twice. Sets come in set number order, and a menu
+    re-sorts them by cards missing or by the cost of the cheapest listings."""
     esc = html.escape
     market_cols = [(p, True) for p in plugins if p.price_guide and p.market_reference]
     columns = (market_cols
@@ -438,7 +542,7 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
     head = "".join(f'<th{f" class={chr(34)}{col_class[p.id]}{chr(34)}" if p.id in col_class else ""}>'
                    f"{esc(p.name)}{f'<small>{esc(p.guide_label)}</small>' if g else ''}</th>"
                    for p, g in columns)
-    body, grand_found, grand_cards, grand_total = [], 0, 0, Decimal(0)
+    body, grand_found, grand_cards, grand_total, n_ordered = [], 0, 0, Decimal(0), 0
     shop_totals = {p.id: [Decimal(0), 0] for p, _ in columns}  # [sum of cheapest copies, cards]
     market_ids = {p.id for p, g in columns if g and p.market_reference}
     for gi, (set_entry, cards) in enumerate(groups):
@@ -465,17 +569,28 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
                 card = f'{esc(c.name_en)}<small>{esc(c.name)}</small>'
             else:
                 card = esc(c.name)
-            rows.append(f'<tr class="{"sold" if listed else "unsold"}"><td class="num {sticky[0]}">'
+            row_class = "sold" if listed else "unsold"
+            if c.card_id.lower() in ordered:
+                n_ordered += 1
+                row_class += " ordered"
+                card += '<span class="ordered" title="Listed in ordered.txt">ordered</span>'
+            rows.append(f'<tr class="{row_class}"><td class="num {sticky[0]}">'
                         f'#{esc(c.local_id)}</td><td class="card {sticky[1]}">{card}</td>'
                         f'{"".join(cells)}</tr>')
         grand_found += found
         grand_cards += len(cards)
         grand_total += total
-        body.append(f'<tr class="set"><th colspan="{2 + len(columns)}"><div>'
+        body.append((set_entry, len(cards), found, total, []))
+        body[-1][4].append(f'<tr class="set"><th colspan="{2 + len(columns)}"><div>'
                     f'{esc(set_entry["set_name"])} <span>{esc(set_entry["set_id"])} · '
                     f'{esc(set_entry["language"])} · {found}/{len(cards)} for sale, cheapest of '
                     f'each {esc(_money(total, currency))}</span></div></th></tr>')
-        body.extend(rows)
+        body[-1][4].extend(rows)
+    # One <tbody> per set, so the page's sort menu can move whole sets about.
+    rank = {id(g[0]): i for i, g in enumerate(sorted(body, key=lambda g: _set_number_key(g[0])))}
+    body = [f'<tbody data-set="{rank[id(s)]}" data-missing="{n}" data-unsold="{n - found}" '
+            f'data-cost="{total}">\n' + "\n".join(trs) + "\n</tbody>"
+            for s, n, found, total, trs in sorted(body, key=lambda g: rank[id(g[0])])]
     foot = "".join(
         f'<td class="{" ".join(filter(None, ["price", g and "guide", col_class.get(p.id)]))}">'
         f'{esc(p.guide_prefix) if g else ""}'
@@ -487,6 +602,8 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
     if guide_note:
         guide_note += (" Those price-guide columns aren't listings and don't count towards "
                        "the totals.")
+    ordered_note = (f" {n_ordered} card(s) already ordered are shaded and tagged “ordered”."
+                    if n_ordered else "")
     doc = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -499,19 +616,39 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path):
 <h1>Missing card prices</h1>
 <p>{grand_found}/{grand_cards} missing card(s) for sale; buying the cheapest of each comes to
 {esc(_money(grand_total, currency))} before shipping. The cheapest listing for each card is
-highlighted; click a price to open the listing.{over_note}{guide_note}</p>
+highlighted; click a price to open the listing.{ordered_note}{over_note}{guide_note}</p>
 <p>Generated {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}.</p>
 <label><input type="checkbox" id="only"> Only show cards that are for sale</label>
+<label><input type="checkbox" id="hide-ordered"> Hide cards already ordered</label>
+<label>Sort sets by <select id="sort">
+<option value="set">Set number</option>
+<option value="missing">Fewest cards missing</option>
+<option value="cost" title="Sets with cards nobody has for sale come last">Cheapest to complete</option>
+</select></label>
 <table>
 <thead><tr><th class="{sticky[0]}">#</th><th class="{sticky[1]}">Card</th>{head}</tr></thead>
-<tbody>
 {chr(10).join(body)}
-</tbody>
 <tfoot><tr><th colspan="2" class="{sticky[0]}">Total per shop<small>cheapest copy of each card it has</small></th>{foot}</tr></tfoot>
 </table>
 <script>
 document.getElementById("only").addEventListener("change", function (e) {{
   document.body.classList.toggle("for-sale-only", e.target.checked);
+}});
+document.getElementById("hide-ordered").addEventListener("change", function (e) {{
+  document.body.classList.toggle("hide-ordered", e.target.checked);
+}});
+document.getElementById("sort").addEventListener("change", function (e) {{
+  var by = e.target.value, table = document.querySelector("table"), foot = table.tFoot;
+  var sets = Array.prototype.slice.call(table.tBodies);
+  function num(tb, key) {{ return parseFloat(tb.dataset[key]); }}
+  sets.sort(function (a, b) {{
+    var d = 0;
+    if (by === "missing") d = num(a, "missing") - num(b, "missing");
+    // A set can only be completed if every card is for sale somewhere.
+    if (by === "cost") d = (num(a, "unsold") > 0) - (num(b, "unsold") > 0) || num(a, "cost") - num(b, "cost");
+    return d || num(a, "set") - num(b, "set");
+  }});
+  sets.forEach(function (tb) {{ table.insertBefore(tb, foot); }});
 }});
 // Line the sticky columns up side by side: each sits right of the ones before it.
 (function () {{
@@ -570,6 +707,14 @@ def build_arg_parser():
                    help="HTML table to write, one row per missing card and one column per "
                         "marketplace, each price linking to its listing (default: "
                         "price_table.html next to --out).")
+    p.add_argument("--ordered", default=DEFAULT_ORDERED, metavar="FILE",
+                   help="Cards already ordered, highlighted in the HTML table: one TCGdex card id "
+                        "(M2a-003) per line (default: ordered.txt next to this script, if it "
+                        "exists).")
+    p.add_argument("--html-only", action="store_true",
+                   help="Don't search: redraw the HTML table from the CSVs the last run wrote "
+                        "(--out and --guide-out), e.g. after editing ordered.txt or re-running "
+                        "missing_cards.py.")
     p.add_argument("--cheapest-only", action="store_true",
                    help="Write only the cheapest offer per card instead of every offer.")
     p.add_argument("--include-uncertain", action="store_true",
@@ -603,6 +748,9 @@ def main(argv=None):
     groups = load_missing(args.missing_json, args.sets)
     if not groups:
         sys.exit("No missing cards to search for in that file.")
+    if args.html_only:
+        redraw_html(groups, available, args)
+        return
     plugins, skipped = select_plugins(available, args.marketplaces)
     for pid, why in sorted(skipped.items()):
         print(f"[{pid}] Skipped: {why}.")
@@ -638,7 +786,8 @@ def main(argv=None):
         rows = write_csv(groups, guide_ranked, currency, args.guide_out)
         print(f"Wrote {rows} price guide price(s) to {os.path.abspath(args.guide_out)}")
     html_out = args.html_out or os.path.join(os.path.dirname(args.out), "price_table.html")
-    write_html(groups, listing_ranked, guide_ranked, plugins, currency, html_out)
+    write_html(groups, listing_ranked, guide_ranked, plugins, currency, html_out,
+               ordered=read_ordered(args.ordered)[0])
     print(f"Wrote the price table to {os.path.abspath(html_out)}")
 
 if __name__ == "__main__":

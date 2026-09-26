@@ -149,7 +149,11 @@ against real listings or counted in the totals, and go to their own CSV,
 
 It also writes `price_table.html` (next to `offers.csv`), the easiest way to
 read the results: open it in a browser for one row per missing card, grouped
-by set, and one column per marketplace. Cards are named in English where
+by set, and one column per marketplace. Sets come in set number order (M1L, M1S, M2,
+M2a...); a menu at the top re-sorts them by fewest cards missing or cheapest to
+complete (sets with cards nobody has for sale go last). Cards listed in
+`ordered.txt` (see the wants list section below) are shaded and tagged
+"ordered", and can be hidden with a tick box, so they aren't bought twice. Cards are named in English where
 missing_cards.py found an English name, with the printed name underneath, and
 the marketplace names stay at the top of the screen as you scroll. Each cell is that marketplace's
 cheapest copy (with its condition or grade, and how many more copies it has),
@@ -178,6 +182,8 @@ nobody has for sale.
 | `--out FILE` | Where to write the offers (default `offers.csv`). |
 | `--guide-out FILE` | Where to write price-guide prices, e.g. Cardmarket's (default `price_guide.csv`). |
 | `--html-out FILE` | Where to write the HTML price table (default `price_table.html` next to `--out`). |
+| `--html-only` | Don't search: redraw the HTML table from the last run's `--out` and `--guide-out` CSVs, e.g. after editing `ordered.txt` or re-running missing_cards.py (cards no longer missing drop out). |
+| `--ordered FILE` | Cards already ordered, shaded and tagged in the HTML table (default `ordered.txt` next to the script, if it exists). |
 | `--cheapest-only` | Write only the cheapest offer per card. |
 | `--include-uncertain` | Also count offers a marketplace isn't sure are the right print. |
 | `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached for 6 hours in `.price_cache/`. |
