@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
 from decimal import Decimal
 from unittest.mock import patch
@@ -622,6 +623,36 @@ class SearchContextTests(unittest.TestCase):
         self.assertEqual(calls, ["https://a.example/1", "https://a.example/2"])
         self.assertEqual(sleeps, [1.5])
         self.assertEqual((ctx.fetched, ctx.cache_hits), (2, 1))
+
+    def test_fetch_waits_out_429s_and_slows_down(self):
+        plugin = EuroShop()
+        plugin.min_interval = 1.0
+        sleeps, stream = [], io.StringIO()
+        ctx = SearchContext(plugin, sleep=sleeps.append, clock=lambda: 0.0, progress_stream=stream)
+        replies = [{"Retry-After": "7"}, {}, None]
+
+        def urlopen(req, timeout):
+            h = replies.pop(0)
+            if h is None:
+                return self.FakeResponse(b'{"ok": true}')
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", h, io.BytesIO())
+
+        with patch("urllib.request.urlopen", urlopen):
+            self.assertEqual(ctx.fetch("https://a.example/1", as_json=True), {"ok": True})
+        # Retry-After first, then the 10s backoff; pacing doubles each time.
+        self.assertEqual(sleeps, [7.0, 2.0, 10.0, 4.0])
+        self.assertIn("rate limited (429)", stream.getvalue())
+
+    def test_fetch_gives_up_on_429_after_its_retries(self):
+        plugin = EuroShop()
+        plugin.rate_limit_retries = 1
+        ctx = SearchContext(plugin, sleep=lambda s: None, progress_stream=io.StringIO())
+
+        def urlopen(req, timeout):
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, io.BytesIO())
+
+        with patch("urllib.request.urlopen", urlopen), self.assertRaises(urllib.error.HTTPError):
+            ctx.fetch("https://a.example/1")
 
     def test_fetch_prints_a_progress_line_every_few_seconds(self):
         now, stream = [0.0], io.StringIO()

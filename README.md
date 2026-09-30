@@ -246,7 +246,11 @@ PLUGIN = ExampleShop()
 A plugin only has to know its own site. The core handles the rest: it sends
 each plugin only the cards in languages it sells, runs marketplaces in
 parallel while spacing each one's own requests, caches responses, converts
-currencies, and carries on if one marketplace fails. How a plugin reads its
+currencies, and carries on if one marketplace fails. When a site answers
+`429 Too Many Requests`, the core waits (as long as its `Retry-After`
+says, or 5s, 10s, 20s...), tries again up to 4 times
+(`rate_limit_retries`), and spaces that site's requests further apart for
+the rest of the run. How a plugin reads its
 site is up to it (an API, web pages, a browser, or a file exported by hand).
 Each offer says how sure the match is: `exact` (matched on set and card
 number), `likely`, or `uncertain` (might be a different print; left out of

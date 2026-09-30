@@ -17,10 +17,15 @@ import os
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
+
+RATE_LIMIT_BACKOFF = 5.0     # seconds before the first retry of a 429 without Retry-After
+MAX_RATE_LIMIT_WAIT = 120.0  # a longer Retry-After is a quota, not worth waiting for
+MAX_MIN_INTERVAL = 10.0      # slowest a 429 makes a plugin's pacing
 
 # How sure a plugin is that an offer is the exact card asked for.
 MATCH_EXACT = "exact"          # matched on set + card number (e.g. a structured listing)
@@ -79,6 +84,9 @@ class Marketplace:
     languages = None           # TCGdex language codes it sells, e.g. {"en", "ja"}; None = all
     needs = ()                 # environment variables it requires, e.g. ("EBAY_APP_ID",)
     min_interval = 1.0         # minimum seconds between this plugin's HTTP requests
+    # How many times fetch() waits out a 429 (Too Many Requests) and tries
+    # again before giving up. 0 for a plugin that handles 429s itself.
+    rate_limit_retries = 4
     # True for a site that only publishes a price per card (e.g. its cheapest
     # copy in any language or condition) rather than individual listings. The
     # core reports those prices separately and never ranks them against real
@@ -135,6 +143,7 @@ class SearchContext:
         self.verbose = verbose
         self.state = {}  # scratch space a plugin can keep for the length of one run
         self._min_interval = plugin.min_interval
+        self._rate_limit_retries = plugin.rate_limit_retries
         self._last_request = None
         self._lock = threading.Lock()
         self._sleep = sleep
@@ -194,6 +203,21 @@ class SearchContext:
             body_from_cache = True
         else:
             body_from_cache = False
+            body = self._download(url, headers, timeout)
+            if path:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(body)
+        self._counted(cache_hit=body_from_cache)
+        return json.loads(body) if as_json else body
+
+    def _download(self, url, headers, timeout):
+        """One paced GET. A 429 is waited out (Retry-After when the site gives
+        one, otherwise 5s, 10s, 20s...) and tried again up to
+        `rate_limit_retries` times, and the plugin's requests are spaced
+        further apart from then on, so the rest of the run doesn't keep
+        hitting the limit."""
+        for attempt in range(self._rate_limit_retries + 1):
             with self._lock:
                 if self._last_request is not None:
                     wait = self._min_interval - (self._clock() - self._last_request)
@@ -203,11 +227,26 @@ class SearchContext:
             self.debug(f"GET {url}")
             req = urllib.request.Request(url, headers={"User-Agent": "Pokemon-MissingCardSearch",
                                                        **(headers or {})})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read().decode(resp.headers.get_content_charset() or "utf-8")
-            if path:
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(body)
-        self._counted(cache_hit=body_from_cache)
-        return json.loads(body) if as_json else body
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.read().decode(resp.headers.get_content_charset() or "utf-8")
+            except urllib.error.HTTPError as e:
+                if e.code != 429 or attempt == self._rate_limit_retries:
+                    raise
+                wait = retry_after(e.headers, default=RATE_LIMIT_BACKOFF * 2 ** attempt)
+                if wait > MAX_RATE_LIMIT_WAIT:
+                    raise
+                with self._lock:
+                    self._min_interval = min(max(self._min_interval * 2, 1.0), MAX_MIN_INTERVAL)
+                self.progress(f"rate limited (429); waiting {wait:.0f}s, then one request "
+                              f"every {self._min_interval:.1f}s")
+                self._sleep(wait)
+
+
+def retry_after(headers, default):
+    """Seconds from a Retry-After header, or `default` when there isn't one
+    in seconds (an HTTP date is rare enough not to parse)."""
+    try:
+        return max(0.0, float((headers or {}).get("Retry-After")))
+    except (TypeError, ValueError):
+        return default
