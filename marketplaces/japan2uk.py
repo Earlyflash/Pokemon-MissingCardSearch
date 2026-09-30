@@ -26,7 +26,7 @@ listings in stock become offers.
 import re
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, Marketplace, Offer
+from marketplaces.base import MATCH_EXACT, SHOPIFY, Marketplace, Offer
 from marketplaces.cardcargo import normalize_code
 from marketplaces.deckdhq import normalize_number, normalize_text
 
@@ -99,6 +99,7 @@ class Japan2UK(Marketplace):
     name = "Japan2UK"
     languages = {"ja"}     # these collections are Japanese cards only
     min_interval = 2.0     # the site answers a quicker 86-page crawl with 429s
+    rate_group = SHOPIFY   # Shopify limits one IP across all its shops
 
     def catalogue(self, ctx):
         """Every product in the Japanese singles and graded collections,

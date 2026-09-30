@@ -250,7 +250,9 @@ currencies, and carries on if one marketplace fails. When a site answers
 `429 Too Many Requests`, the core waits (as long as its `Retry-After`
 says, or 5s, 10s, 20s...), tries again up to 4 times
 (`rate_limit_retries`), and spaces that site's requests further apart for
-the rest of the run. How a plugin reads its
+the rest of the run. Plugins with the same `rate_group` (every Shopify
+shop is `SHOPIFY`, since Shopify limits one IP across all the shops it
+hosts) also share one pace between them. How a plugin reads its
 site is up to it (an API, web pages, a browser, or a file exported by hand).
 Each offer says how sure the match is: `exact` (matched on set and card
 number), `likely`, or `uncertain` (might be a different print; left out of

@@ -30,7 +30,7 @@ listings in stock become offers.
 import re
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, Marketplace, Offer
+from marketplaces.base import MATCH_EXACT, SHOPIFY, Marketplace, Offer
 from marketplaces.cardcargo import normalize_code
 from marketplaces.deckdhq import normalize_number, normalize_text
 
@@ -105,6 +105,7 @@ class JapanGameTCG(Marketplace):
     name = "Japan Game & TCG Market"
     languages = {"ja"}     # the shop sells Japanese cards (and a handful of Chinese ones, skipped)
     min_interval = 1.0
+    rate_group = SHOPIFY   # Shopify limits one IP across all its shops
 
     def catalogue(self, ctx):
         """Every product in the shop, with its parsed title, fetched once

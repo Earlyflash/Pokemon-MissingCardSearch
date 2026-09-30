@@ -32,7 +32,7 @@ Each product is one copy with a Condition option, always Near Mint so far
 import re
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, Marketplace, Offer
+from marketplaces.base import MATCH_EXACT, SHOPIFY, Marketplace, Offer
 from marketplaces.cardcargo import normalize_code
 from marketplaces.deckdhq import has_phrase, normalize_number, normalize_text
 
@@ -142,6 +142,7 @@ class TCGHouse(Marketplace):
     name = "TCG House"
     languages = {"en", "ja"}
     min_interval = 1.0
+    rate_group = SHOPIFY   # Shopify limits one IP across all its shops
 
     def catalogue(self, ctx):
         """Every product in the singles collection, fetched once per run."""

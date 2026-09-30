@@ -14,8 +14,8 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import marketplaces  # noqa: E402
 import price_search  # noqa: E402
-from marketplaces.base import (MATCH_LIKELY, MATCH_UNCERTAIN, Marketplace,  # noqa: E402
-                               MissingCard, Offer, SearchContext)
+from marketplaces.base import (MATCH_LIKELY, MATCH_UNCERTAIN, RATE_GROUPS, RECOVER_AFTER,  # noqa: E402
+                               SHOPIFY, Marketplace, MissingCard, Offer, Pacer, SearchContext)
 
 MISSING = {
     "sets": [
@@ -653,6 +653,35 @@ class SearchContextTests(unittest.TestCase):
 
         with patch("urllib.request.urlopen", urlopen), self.assertRaises(urllib.error.HTTPError):
             ctx.fetch("https://a.example/1")
+
+    def test_plugins_in_a_rate_group_share_one_pacer(self):
+        a, b = EuroShop(), EuroShop()
+        a.id, b.id = "a", "b"
+        a.min_interval = b.min_interval = 0
+        a.rate_group = b.rate_group = SHOPIFY
+        sleeps, pacers = [], {}
+        ctxs = [SearchContext(p, sleep=sleeps.append, clock=lambda: 0.0, group_pacers=pacers)
+                for p in (a, b)]
+        with patch("urllib.request.urlopen", lambda req, timeout: self.FakeResponse(b"x")):
+            ctxs[0].fetch("https://a.example/1")
+            ctxs[1].fetch("https://b.example/1")
+        # b's first request waits for a's, at the group's pace.
+        self.assertEqual(sleeps, [RATE_GROUPS[SHOPIFY]])
+
+    def test_a_burst_of_429s_slows_a_pacer_only_once(self):
+        pacer = Pacer(2.0, sleep=lambda s: None, clock=lambda: 0.0)
+        sent = [pacer.wait(), pacer.wait()]
+        self.assertEqual([pacer.slow_down(s) for s in sent], [4.0, 4.0])
+
+    def test_a_pacer_speeds_back_up_after_a_run_of_successes(self):
+        pacer = Pacer(2.0, sleep=lambda s: None, clock=lambda: 0.0)
+        pacer.slow_down(pacer.wait())
+        pacer.slow_down(pacer.wait())
+        self.assertEqual(pacer.interval, 8.0)
+        for expected in (4.0, 2.0, 2.0):
+            for _ in range(RECOVER_AFTER):
+                pacer.succeeded()
+            self.assertEqual(pacer.interval, expected)
 
     def test_fetch_prints_a_progress_line_every_few_seconds(self):
         now, stream = [0.0], io.StringIO()

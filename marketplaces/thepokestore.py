@@ -27,7 +27,7 @@ condition per card, so condition is left unknown.
 import re
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, Marketplace, Offer
+from marketplaces.base import MATCH_EXACT, SHOPIFY, Marketplace, Offer
 from marketplaces.cardcargo import normalize_code
 from marketplaces.deckdhq import normalize_number, normalize_text
 
@@ -81,6 +81,7 @@ class ThePokeStore(Marketplace):
     name = "The Poké Store"
     languages = {"ja"}     # this collection is Japanese singles only
     min_interval = 1.0
+    rate_group = SHOPIFY   # Shopify limits one IP across all its shops
 
     def _pages(self, ctx, url, key, **fields):
         rows_out = []

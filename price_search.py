@@ -761,10 +761,11 @@ def main(argv=None):
     print(f"Searching {', '.join(p.id for p in plugins)} for {n_cards} missing card(s) "
           f"across {len(groups)} set(s)...")
     cache_dir = None if args.no_cache else args.cache_dir
+    group_pacers = {}  # plugins in one rate_group share a pacer (see RATE_GROUPS)
     plugin_results = search_all(
         plugins, groups,
         lambda p: SearchContext(p, config={k: os.environ[k] for k in p.needs},
-                                cache_dir=cache_dir, verbose=args.verbose))
+                                cache_dir=cache_dir, verbose=args.verbose, group_pacers=group_pacers))
 
     guide_ids = {p.id for p in plugins if p.price_guide}
     offers = [pair for found, _ in plugin_results.values() for pair in found]

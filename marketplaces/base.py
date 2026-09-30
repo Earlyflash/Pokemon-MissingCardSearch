@@ -26,6 +26,12 @@ from typing import Optional
 RATE_LIMIT_BACKOFF = 5.0     # seconds before the first retry of a 429 without Retry-After
 MAX_RATE_LIMIT_WAIT = 120.0  # a longer Retry-After is a quota, not worth waiting for
 MAX_MIN_INTERVAL = 10.0      # slowest a 429 makes a plugin's pacing
+RECOVER_AFTER = 10           # requests in a row without a 429 before pacing speeds back up
+# Minimum seconds between any two requests from plugins sharing a
+# `rate_group`. Shopify limits one IP across every shop it hosts, so a dozen
+# Shopify plugins pacing themselves separately still trip it together.
+RATE_GROUPS = {"shopify": 2.0}
+SHOPIFY = "shopify"
 
 # How sure a plugin is that an offer is the exact card asked for.
 MATCH_EXACT = "exact"          # matched on set + card number (e.g. a structured listing)
@@ -87,6 +93,9 @@ class Marketplace:
     # How many times fetch() waits out a 429 (Too Many Requests) and tries
     # again before giving up. 0 for a plugin that handles 429s itself.
     rate_limit_retries = 4
+    # Plugins with the same rate_group (a key of RATE_GROUPS, e.g. SHOPIFY)
+    # also share one pacer during a run, on top of their own min_interval.
+    rate_group = None
     # True for a site that only publishes a price per card (e.g. its cheapest
     # copy in any language or condition) rather than individual listings. The
     # core reports those prices separately and never ranks them against real
@@ -135,17 +144,24 @@ class SearchContext:
 
     def __init__(self, plugin, config=None, cache_dir=None, cache_ttl=6 * 3600,
                  verbose=False, sleep=time.sleep, clock=time.monotonic,
-                 progress_interval=5.0, progress_stream=None):
+                 progress_interval=5.0, progress_stream=None, group_pacers=None):
         self.plugin_id = plugin.id
         self.config = config or {}
         self.cache_dir = cache_dir
         self.cache_ttl = cache_ttl
         self.verbose = verbose
         self.state = {}  # scratch space a plugin can keep for the length of one run
-        self._min_interval = plugin.min_interval
         self._rate_limit_retries = plugin.rate_limit_retries
-        self._last_request = None
         self._lock = threading.Lock()
+        self._pacer = Pacer(plugin.min_interval, sleep, clock)
+        # `group_pacers` is one dict shared by every context in a run, so
+        # plugins in the same rate_group get the same Pacer.
+        self._group = plugin.rate_group
+        self._group_pacer = None
+        if self._group:
+            pacers = {} if group_pacers is None else group_pacers
+            self._group_pacer = pacers.setdefault(self._group,
+                                                  Pacer(RATE_GROUPS.get(self._group, 1.0), sleep, clock))
         self._sleep = sleep
         self._clock = clock
         self.fetched = 0       # pages downloaded this run
@@ -214,33 +230,77 @@ class SearchContext:
     def _download(self, url, headers, timeout):
         """One paced GET. A 429 is waited out (Retry-After when the site gives
         one, otherwise 5s, 10s, 20s...) and tried again up to
-        `rate_limit_retries` times, and the plugin's requests are spaced
-        further apart from then on, so the rest of the run doesn't keep
-        hitting the limit."""
+        `rate_limit_retries` times, and the plugin's (and its rate group's)
+        requests are spaced further apart from then on, so the rest of the
+        run doesn't keep hitting the limit."""
         for attempt in range(self._rate_limit_retries + 1):
-            with self._lock:
-                if self._last_request is not None:
-                    wait = self._min_interval - (self._clock() - self._last_request)
-                    if wait > 0:
-                        self._sleep(wait)
-                self._last_request = self._clock()
+            own = self._pacer.wait()
+            group = self._group_pacer.wait() if self._group_pacer else None
             self.debug(f"GET {url}")
             req = urllib.request.Request(url, headers={"User-Agent": "Pokemon-MissingCardSearch",
                                                        **(headers or {})})
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    return resp.read().decode(resp.headers.get_content_charset() or "utf-8")
+                    body = resp.read().decode(resp.headers.get_content_charset() or "utf-8")
+                for pacer in (self._pacer, self._group_pacer):
+                    if pacer:
+                        pacer.succeeded()
+                return body
             except urllib.error.HTTPError as e:
                 if e.code != 429 or attempt == self._rate_limit_retries:
                     raise
                 wait = retry_after(e.headers, default=RATE_LIMIT_BACKOFF * 2 ** attempt)
                 if wait > MAX_RATE_LIMIT_WAIT:
                     raise
-                with self._lock:
-                    self._min_interval = min(max(self._min_interval * 2, 1.0), MAX_MIN_INTERVAL)
-                self.progress(f"rate limited (429); waiting {wait:.0f}s, then one request "
-                              f"every {self._min_interval:.1f}s")
+                pace = f"one request every {self._pacer.slow_down(own):.1f}s"
+                if self._group_pacer:
+                    pace += f" ({self._group_pacer.slow_down(group):.1f}s across all {self._group} shops)"
+                self.progress(f"rate limited (429); waiting {wait:.0f}s, then {pace}")
                 self._sleep(wait)
+
+
+class Pacer:
+    """Spaces requests at least `interval` seconds apart, across threads.
+    429s slow it down (slow_down) and runs of successes bring it back
+    towards its starting interval (succeeded)."""
+
+    def __init__(self, interval, sleep=time.sleep, clock=time.monotonic):
+        self.interval = self._base = interval
+        self._ok = 0
+        self._sleep = sleep
+        self._clock = clock
+        self._last = None
+        self._lock = threading.Lock()
+
+    def wait(self):
+        """Sleep until the next request may go, and return the interval it
+        went at (for slow_down)."""
+        with self._lock:
+            if self._last is not None:
+                wait = self.interval - (self._clock() - self._last)
+                if wait > 0:
+                    self._sleep(wait)
+            self._last = self._clock()
+            return self.interval
+
+    def slow_down(self, sent_at):
+        """Double the interval after a 429 on a request sent at `sent_at`.
+        When several requests sent at the same pace all get 429s, only the
+        first doubles it."""
+        with self._lock:
+            self._ok = 0
+            if self.interval == sent_at:
+                self.interval = min(max(self.interval * 2, 1.0), MAX_MIN_INTERVAL)
+            return self.interval
+
+    def succeeded(self):
+        """A request got through; after RECOVER_AFTER in a row, halve the
+        interval, never below where it started."""
+        with self._lock:
+            self._ok += 1
+            if self._ok >= RECOVER_AFTER and self.interval > self._base:
+                self.interval = max(self._base, self.interval / 2)
+                self._ok = 0
 
 
 def retry_after(headers, default):

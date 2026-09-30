@@ -35,7 +35,7 @@ import html
 import re
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, MATCH_UNCERTAIN, Marketplace, Offer
+from marketplaces.base import MATCH_EXACT, MATCH_UNCERTAIN, SHOPIFY, Marketplace, Offer
 from marketplaces.cardcargo import normalize_code
 from marketplaces.deckdhq import normalize_number, normalize_text
 from marketplaces.radams import name_agrees
@@ -274,6 +274,7 @@ class AberdeenCollectables(Marketplace):
     name = "Aberdeen Collectables"
     languages = set(LANGUAGES.values())
     min_interval = 1.0
+    rate_group = SHOPIFY   # Shopify limits one IP across all its shops
 
     def catalogue(self, ctx):
         """Every product in the raw singles and graded collections, fetched once per run."""

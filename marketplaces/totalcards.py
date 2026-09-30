@@ -34,7 +34,7 @@ grade in the title ("(PSA 10 Graded Slab)") or in options.
 import re
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, Marketplace, Offer
+from marketplaces.base import MATCH_EXACT, SHOPIFY, Marketplace, Offer
 from marketplaces.cardcargo import normalize_code
 from marketplaces.deckdhq import normalize_number, normalize_text
 
@@ -176,6 +176,7 @@ class TotalCards(Marketplace):
     name = "Total Cards"
     languages = {"ja"}     # this collection is Japanese singles; other languages are filtered out
     min_interval = 1.0
+    rate_group = SHOPIFY   # Shopify limits one IP across all its shops
 
     def catalogue(self, ctx):
         """Every product in the Japanese singles collection, fetched once per run."""

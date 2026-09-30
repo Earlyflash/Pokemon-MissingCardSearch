@@ -34,7 +34,7 @@ description gives the condition ("Card is in NM-M+ condition.").
 import re
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, Marketplace, Offer
+from marketplaces.base import MATCH_EXACT, SHOPIFY, Marketplace, Offer
 from marketplaces.cardcargo import normalize_code
 from marketplaces.deckdhq import normalize_number, normalize_text
 
@@ -127,6 +127,7 @@ class CosmicCollectables(Marketplace):
     name = "Cosmic Collectables"
     languages = {"ja"}     # this collection is Japanese singles (Korean copies are skipped)
     min_interval = 5.0     # Cloudflare challenges quicker repeat requests
+    rate_group = SHOPIFY   # Shopify limits one IP across all its shops
 
     def catalogue(self, ctx):
         """(product, parsed title) for every product in the Japanese singles

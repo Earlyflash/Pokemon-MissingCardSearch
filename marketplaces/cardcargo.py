@@ -26,7 +26,7 @@ only variants in stock become offers, each linking to its variant.
 import re
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, Marketplace, Offer
+from marketplaces.base import MATCH_EXACT, SHOPIFY, Marketplace, Offer
 from marketplaces.deckdhq import normalize_number, normalize_text
 
 SHOP = "https://cardcargo.com"
@@ -110,6 +110,7 @@ class CardCargo(Marketplace):
     name = "CardCargo"
     languages = {"ja"}     # this collection is Japanese singles only
     min_interval = 1.0
+    rate_group = SHOPIFY   # Shopify limits one IP across all its shops
 
     def catalogue(self, ctx):
         """Every product in the Japanese singles collection, fetched once per run."""
