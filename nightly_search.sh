@@ -6,11 +6,15 @@
 # rewrites missing_cards.csv (moving arrived cards out of ordered.txt); if
 # that fails, the search uses the missing_cards.csv already there.
 # --cache-ttl 0 rechecks every page with the shops; unchanged pages cost a
-# short "not modified" reply rather than a download.
+# short "not modified" reply rather than a download. The log keeps its last
+# LOG_LINES (default 20000) lines.
 DATA_DIR="${POKEMON_DATA_DIR:-$HOME/PokemonData}"
 mkdir -p "$DATA_DIR" || exit 1
 cd "$(dirname "$0")" || exit 1
 LOG="$DATA_DIR/nightly_search.log"
+if [ -f "$LOG" ]; then
+    tail -n "${LOG_LINES:-20000}" "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+fi
 echo "=== $(date '+%Y-%m-%d %H:%M') nightly search" >> "$LOG"
 if [ -n "$RARECANDY_PROFILE" ]; then
     python3 missing_cards.py --profile "$RARECANDY_PROFILE" >> "$LOG" 2>&1

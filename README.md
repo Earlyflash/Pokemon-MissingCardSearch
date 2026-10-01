@@ -262,6 +262,11 @@ container that blocks user namespaces (such as an unprivileged LXC),
 Chromium can't start its sandbox; on Debian, also add
 `CHROMIUM_FLAGS=--no-sandbox`.
 
+`nightly_orders.sh` stops Claude after 20 minutes (set `ORDER_EMAIL_TIMEOUT`,
+e.g. `45m`, to change that) so a stuck run can't hold up the search. Each
+script trims its log before writing to it, keeping the last `LOG_LINES`
+lines (5000 for the orders log, 20000 for the search log).
+
 ### Marketplaces
 
 | ID | Marketplace | How it matches |
