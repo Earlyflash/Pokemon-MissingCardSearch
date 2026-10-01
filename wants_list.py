@@ -45,7 +45,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from marketplaces.base import SearchContext
 from marketplaces.cardmarket import (PLUGIN as CARDMARKET, PRODUCT_URL, TCGDEX_CARD_URL,
                                      TCGDEX_MAX_AGE, product_id)
-from price_search import (DEFAULT_CACHE_DIR, DEFAULT_ORDERED, exchange_rates, load_missing,
+from data_dir import data_path, ensure_parent
+from price_search import (DEFAULT_CACHE_DIR, DEFAULT_MISSING, DEFAULT_ORDERED, exchange_rates, load_missing,
                           read_ordered)
 
 PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
@@ -223,9 +224,10 @@ def build_arg_parser():
     p = argparse.ArgumentParser(
         description="Write missing cards as a list to paste into Cardmarket's wants list "
                     "\"Add Deck List\" box.")
-    p.add_argument("missing_file", metavar="MISSING_FILE",
-                   help="missing_cards.csv, or the JSON written by missing_cards.py --json.")
-    p.add_argument("--out", default="cardmarket_wants.txt",
+    p.add_argument("missing_file", nargs="?", default=DEFAULT_MISSING, metavar="MISSING_FILE",
+                   help="missing_cards.csv, or the JSON written by missing_cards.py --json "
+                        "(default: missing_cards.csv in ~/PokemonData).")
+    p.add_argument("--out", default=data_path("cardmarket_wants.txt"),
                    help="Text file to write the list to (default: %(default)s).")
     p.add_argument("--csv-out", metavar="FILE",
                    help="CSV of every missing card with its price and whether it made the list "
@@ -239,7 +241,7 @@ def build_arg_parser():
     p.add_argument("--ordered", default=DEFAULT_ORDERED, metavar="FILE",
                    help="Cards already ordered, left out of the list: one per line, as a TCGdex "
                         "card id (me01-161) or a line copied from an earlier list (default: "
-                        "ordered.txt next to this script, if it exists).")
+                        "ordered.txt in ~/PokemonData, if it exists).")
     p.add_argument("--skip-unpriced", action="store_true",
                    help="With a price filter, also leave out cards Cardmarket has no price for.")
     p.add_argument("--price", dest="price_field", choices=PRICE_FIELDS, default="trend",
@@ -249,7 +251,7 @@ def build_arg_parser():
                    help="Currency for prices and the filters (default: %(default)s).")
     p.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR,
                    help="Where downloads are cached, shared with price_search.py "
-                        "(default: .price_cache).")
+                        "(default: .price_cache in ~/PokemonData).")
     p.add_argument("--no-cache", action="store_true", help="Always fetch fresh data.")
     p.add_argument("-v", "--verbose", action="store_true", help="Print every request made.")
     return p
@@ -297,9 +299,11 @@ def main(argv=None):
     mark_ordered(rows, ordered)
     listed = [r for r in rows if r["status"] == "yes"]
     lines = deck_list_lines(listed)
+    ensure_parent(args.out)
     with open(args.out, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + ("\n" if lines else ""))
     csv_out = args.csv_out or os.path.splitext(args.out)[0] + ".csv"
+    ensure_parent(csv_out)
     write_csv(rows, currency, csv_out)
 
     no_product = [r for r in rows if r["status"] == "no Cardmarket product"]

@@ -33,12 +33,13 @@ from decimal import Decimal, ROUND_HALF_UP
 
 import marketplaces
 from marketplaces.base import MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer, SearchContext
+from data_dir import data_path, ensure_parent
 from ordered import read_ordered
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_CACHE_DIR = os.path.join(SCRIPT_DIR, ".price_cache")
+DEFAULT_CACHE_DIR = data_path(".price_cache")
 # Cards already bought but not yet in the collection (see ordered.py).
-DEFAULT_ORDERED = os.path.join(SCRIPT_DIR, "ordered.txt")
+DEFAULT_ORDERED = data_path("ordered.txt")
+DEFAULT_MISSING = data_path("missing_cards.csv")
 # Same free exchange-rate service RareCandyExporter's --currency uses (it has
 # since moved from api.frankfurter.app, which now redirects here).
 RATES_URL = "https://api.frankfurter.dev/v1/latest?from={src}&to={dst}"
@@ -47,7 +48,7 @@ PENNY = Decimal("0.01")
 
 # ---------------------------------------------------------------- settings --
 
-DEFAULT_ENV_FILE = os.path.join(SCRIPT_DIR, ".env")
+DEFAULT_ENV_FILE = data_path(".env")
 
 
 def load_env_file(path, environ=os.environ):
@@ -640,6 +641,7 @@ document.getElementById("sort").addEventListener("change", function (e) {{
 </body>
 </html>
 """
+    ensure_parent(path)
     with open(path, "w", encoding="utf-8") as f:
         f.write(doc)
 
@@ -660,8 +662,9 @@ def list_marketplaces(available, environ=os.environ):
 def build_arg_parser():
     p = argparse.ArgumentParser(
         description="Search marketplaces for the cards listed by missing_cards.py --json.")
-    p.add_argument("missing_json", nargs="?", metavar="MISSING_FILE",
-                   help="missing_cards.csv, or the JSON written by missing_cards.py --json.")
+    p.add_argument("missing_json", nargs="?", default=DEFAULT_MISSING, metavar="MISSING_FILE",
+                   help="missing_cards.csv, or the JSON written by missing_cards.py --json "
+                        "(default: missing_cards.csv in ~/PokemonData).")
     p.add_argument("--marketplace", dest="marketplaces", action="append", default=[], metavar="ID",
                    help="Only search this marketplace (repeatable). Default: every marketplace "
                         "whose settings are present.")
@@ -671,9 +674,9 @@ def build_arg_parser():
                    help="Only search this set, by name or TCGdex set id (repeatable).")
     p.add_argument("--currency", default="GBP",
                    help="Currency to compare prices in (default: %(default)s).")
-    p.add_argument("--out", default="offers.csv",
+    p.add_argument("--out", default=data_path("offers.csv"),
                    help="CSV to write the offers to (default: %(default)s).")
-    p.add_argument("--guide-out", default="price_guide.csv",
+    p.add_argument("--guide-out", default=data_path("price_guide.csv"),
                    help="CSV for prices from price-guide marketplaces such as Cardmarket, which "
                         "publish one price per card rather than listings and are kept apart from "
                         "the offers (default: %(default)s).")
@@ -683,7 +686,7 @@ def build_arg_parser():
                         "price_table.html next to --out).")
     p.add_argument("--ordered", default=DEFAULT_ORDERED, metavar="FILE",
                    help="Cards already ordered, highlighted in the HTML table: one TCGdex card id "
-                        "(M2a-003) per line (default: ordered.txt next to this script, if it "
+                        "(M2a-003) per line (default: ordered.txt in ~/PokemonData, if it "
                         "exists).")
     p.add_argument("--html-only", action="store_true",
                    help="Don't search: redraw the HTML table from the CSVs the last run wrote "
@@ -694,7 +697,8 @@ def build_arg_parser():
     p.add_argument("--include-uncertain", action="store_true",
                    help="Also count offers a marketplace isn't sure are the right print.")
     p.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR,
-                   help="Where marketplace responses are cached (default: .price_cache).")
+                   help="Where marketplace responses are cached (default: .price_cache in "
+                        "~/PokemonData).")
     p.add_argument("--cache-ttl", type=float, default=6, metavar="HOURS",
                    help="Use cached responses younger than this without asking the site "
                         "(default: %(default)g). Older ones are checked with the site, which "
@@ -705,7 +709,7 @@ def build_arg_parser():
     p.add_argument("--env-file", default=DEFAULT_ENV_FILE, metavar="FILE",
                    help="File of KEY=value settings, such as PULSEAPI_KEY, read before the "
                         "marketplaces are chosen; variables already set in the environment win "
-                        "(default: .env next to this script).")
+                        "(default: .env in ~/PokemonData).")
     p.add_argument("-v", "--verbose", action="store_true", help="Print every request made.")
     return p
 
@@ -757,6 +761,7 @@ def main(argv=None):
         listing_ranked = rank_offers(groups, [pair for found, _ in listings.values() for pair in found],
                                      rates, args.include_uncertain)
         print_report(groups, listing_ranked, currency, listings, skipped)
+        ensure_parent(args.out)
         rows = write_csv(groups, listing_ranked, currency, args.out, args.cheapest_only)
         print(f"Wrote {rows} offer(s) to {os.path.abspath(args.out)}")
     if guides:
@@ -764,6 +769,7 @@ def main(argv=None):
                                    rates, args.include_uncertain)
         print_guide_report(groups, guide_ranked, currency, guides,
                            [p for p in plugins if p.id in guide_ids])
+        ensure_parent(args.guide_out)
         rows = write_csv(groups, guide_ranked, currency, args.guide_out)
         print(f"Wrote {rows} price guide price(s) to {os.path.abspath(args.guide_out)}")
     html_out = args.html_out or os.path.join(os.path.dirname(args.out), "price_table.html")

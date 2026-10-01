@@ -32,11 +32,14 @@ import shutil
 import subprocess
 import sys
 
+from data_dir import data_path, ensure_parent
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BINDER_TOOL_DIR = os.path.join(SCRIPT_DIR, "vendor", "pokemon-binder-cover-tool")
 EXPORTER_DIR = os.path.join(SCRIPT_DIR, "vendor", "RareCandyExporter")
 DEFAULT_SET_MAP = os.path.join(SCRIPT_DIR, "set_map.json")
-DEFAULT_ORDERED = os.path.join(SCRIPT_DIR, "ordered.txt")
+DEFAULT_ORDERED = data_path("ordered.txt")
+DEFAULT_SESSION = data_path(".rarecandy-session.json")
 
 if not os.path.isfile(os.path.join(BINDER_TOOL_DIR, "binder_cover.py")):
     sys.exit("vendor/pokemon-binder-cover-tool is empty -- run "
@@ -99,6 +102,10 @@ def run_exporter(profile, out_csv, extra_args=()):
     node = shutil.which("node")
     if not node:
         sys.exit("Node.js 18+ is needed to run RareCandyExporter (`node` not found on PATH).")
+    ensure_parent(out_csv)
+    if "--cookies" not in extra_args:
+        # Keep the RareCandy login with your other files, not in the repo.
+        extra_args = [*extra_args, "--cookies", DEFAULT_SESSION]
     cmd = [node, export_js, profile, os.path.abspath(out_csv), *extra_args]
     print(f"[export] Running RareCandyExporter: {' '.join(cmd[1:])}")
     result = subprocess.run(cmd)
@@ -436,7 +443,7 @@ def build_arg_parser():
     src.add_argument("--csv", help="A CSV already exported with RareCandyExporter.")
     src.add_argument("--profile", help="RareCandy profile name or URL; runs RareCandyExporter "
                                        "(vendor/RareCandyExporter) to export it first.")
-    p.add_argument("--export-csv", default="rarecandy_export.csv",
+    p.add_argument("--export-csv", default=data_path("rarecandy_export.csv"),
                    help="Where --profile saves the RareCandy export (default: %(default)s).")
     p.add_argument("--set", dest="sets", action="append", default=[], metavar="NAME",
                    help="Only check this RareCandy set name (repeatable). Default: every set "
@@ -449,7 +456,7 @@ def build_arg_parser():
     p.add_argument("--min-complete", type=float, default=75, metavar="PERCENT",
                    help="Only list sets you already own at least this percentage of "
                         "(default: %(default)g). 0 lists every set you own a card from.")
-    p.add_argument("--out", default="missing_cards.csv",
+    p.add_argument("--out", default=data_path("missing_cards.csv"),
                    help="CSV to write the missing cards to (default: %(default)s).")
     p.add_argument("--no-english-names", dest="english_names", action="store_false",
                    help="Skip looking up English names for non-English cards (saves "
@@ -457,7 +464,7 @@ def build_arg_parser():
     p.add_argument("--json", metavar="FILE",
                    help="Also write the missing cards as JSON, grouped by set.")
     p.add_argument("--ordered", default=DEFAULT_ORDERED, metavar="FILE",
-                   help="Cards on order (default: ordered.txt next to this script, if it "
+                   help="Cards on order (default: ordered.txt in ~/PokemonData, if it "
                         "exists). Any that are now in the collection are moved out to "
                         "--arrived.")
     p.add_argument("--arrived", metavar="FILE",
@@ -504,9 +511,11 @@ def main(argv=None):
     if args.english_names:
         add_english_names(results)
     print_report(results, unmatched, below, args.min_complete)
+    ensure_parent(args.out)
     write_csv(results, args.out)
     print(f"Wrote {sum(len(r['missing']) for r in results)} row(s) to {os.path.abspath(args.out)}")
     if args.json:
+        ensure_parent(args.json)
         write_json(results, unmatched, args.json, below, args.min_complete)
         print(f"Wrote JSON to {os.path.abspath(args.json)}")
 

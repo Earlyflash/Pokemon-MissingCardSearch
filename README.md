@@ -28,6 +28,17 @@ Already cloned without `--recurse-submodules`? Run `git submodule update --init`
 The Python side needs only the standard library (Python 3.9+). Pillow isn't
 needed, even though the binder cover tool uses it for drawing.
 
+### Your files (~/PokemonData)
+
+Everything that's yours rather than the code's lives outside the repository,
+in `~/PokemonData` (or the folder named by the `POKEMON_DATA_DIR` environment
+variable), which is created on first use: the RareCandy export and login
+session, `missing_cards.csv`, `ordered.txt` and `ordered_arrived.txt`,
+`offers.csv`, `price_guide.csv`, `price_table.html`, the Cardmarket wants
+list, `.env`, the `.price_cache/` folder and `nightly_search.log`. Every
+default path below is in that folder, and a file given on the command line
+is read from or written to exactly where you say.
+
 ## Usage
 
 Export and compare in one go:
@@ -104,27 +115,28 @@ include them, and fetching rarity costs one request per card.
 |---|---|
 | `--csv FILE` | A CSV exported with RareCandyExporter. |
 | `--profile NAME` | RareCandy profile name or URL; runs RareCandyExporter first. |
-| `--export-csv FILE` | Where `--profile` saves the export (default `rarecandy_export.csv`). |
+| `--export-csv FILE` | Where `--profile` saves the export (default `rarecandy_export.csv` in `~/PokemonData`). The RareCandy login is cached in `~/PokemonData/.rarecandy-session.json`. |
 | `--set NAME` | Only check this RareCandy set (repeatable). Default: every set in the collection. |
 | `--map "NAME=CODE"` | Match a RareCandy set name to a TCGdex set code for this run (repeatable). |
 | `--set-map FILE` | Set name overrides file (default `set_map.json`). |
 | `--min-complete PERCENT` | Only list sets you already own at least this much of (default `75`). `0` lists every set you own a card from. |
-| `--out FILE` | Where to write the missing cards (default `missing_cards.csv`). |
+| `--out FILE` | Where to write the missing cards (default `missing_cards.csv` in `~/PokemonData`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
 | `--no-english-names` | Don't look up English names for non-English cards. |
-| `--ordered FILE` | Cards on order (default `ordered.txt` next to the script, if it exists). Any now in the collection are moved out to `--arrived`; see [Cards on order](#cards-on-order-orderedtxt). |
+| `--ordered FILE` | Cards on order (default `ordered.txt` in `~/PokemonData`, if it exists). Any now in the collection are moved out to `--arrived`; see [Cards on order](#cards-on-order-orderedtxt). |
 | `--arrived FILE` | Where arrived cards go (default `ordered_arrived.txt` next to `--ordered`). |
 | `--keep-ordered` | Leave `ordered.txt` alone this run. |
 
 ## Pricing the missing cards
 
-`price_search.py` takes `missing_cards.csv` (or the `--json` file above) and
+`price_search.py` takes `missing_cards.csv` (by default the one in
+`~/PokemonData`, or the `--json` file above) and
 asks each marketplace plugin which of those cards are for sale, then lists
 every offer found, cheapest first per card, in GBP:
 
 ```bash
 python missing_cards.py --csv earlyflash.csv
-python price_search.py missing_cards.csv
+python price_search.py                        # ~/PokemonData/missing_cards.csv
 python price_search.py missing.json            # the --json file works too
 python price_search.py missing.json --marketplace deckdhq --cheapest-only
 python price_search.py --list-marketplaces
@@ -193,16 +205,16 @@ nobody has for sale.
 | `--list-marketplaces` | List the installed marketplace plugins and whether they're ready. |
 | `--set NAME` | Only search this set, by name or TCGdex set id (repeatable). |
 | `--currency CODE` | Currency to compare in (default `GBP`), converted with the same free rate service RareCandyExporter uses. |
-| `--out FILE` | Where to write the offers (default `offers.csv`). |
-| `--guide-out FILE` | Where to write price-guide prices, e.g. Cardmarket's (default `price_guide.csv`). |
+| `--out FILE` | Where to write the offers (default `offers.csv` in `~/PokemonData`). |
+| `--guide-out FILE` | Where to write price-guide prices, e.g. Cardmarket's (default `price_guide.csv` in `~/PokemonData`). |
 | `--html-out FILE` | Where to write the HTML price table (default `price_table.html` next to `--out`). |
 | `--html-only` | Don't search: redraw the HTML table from the last run's `--out` and `--guide-out` CSVs, e.g. after editing `ordered.txt` or re-running missing_cards.py (cards no longer missing drop out). |
-| `--ordered FILE` | Cards already ordered, shaded and tagged in the HTML table (default `ordered.txt` next to the script, if it exists). |
+| `--ordered FILE` | Cards already ordered, shaded and tagged in the HTML table (default `ordered.txt` in `~/PokemonData`, if it exists). |
 | `--cheapest-only` | Write only the cheapest offer per card. |
 | `--include-uncertain` | Also count offers a marketplace isn't sure are the right print. |
 | `--cache-ttl HOURS` | Use cached responses younger than this without asking the site (default 6). Older ones are re-checked with the site and reused if unchanged; `0` checks every page. |
-| `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached in `.price_cache/`; `--no-cache` downloads everything and saves nothing. |
-| `--env-file FILE` | File of `KEY=value` settings such as `PULSEAPI_KEY` (default `.env` next to `price_search.py`; git-ignored). Variables already set in the environment win. |
+| `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached in `~/PokemonData/.price_cache/`; `--no-cache` downloads everything and saves nothing. |
+| `--env-file FILE` | File of `KEY=value` settings such as `PULSEAPI_KEY` (default `~/PokemonData/.env`). Variables already set in the environment win. |
 | `-v` | Print every request made. |
 
 ### Running it overnight
@@ -214,11 +226,11 @@ search overnight on your machine to refresh the cache (and wake up to a fresh
 `--cache-ttl 24` so it reads last night's pages from disk:
 
 ```bash
-python price_search.py missing_cards.csv --cache-ttl 24
+python price_search.py --cache-ttl 24
 ```
 
 `nightly_search.sh` runs the overnight search and appends its output to
-`nightly_search.log`. Schedule it for 3am every day with cron (`crontab -e`,
+`~/PokemonData/nightly_search.log`. Schedule it for 3am every day with cron (`crontab -e`,
 using the folder you cloned into):
 
 ```
@@ -240,7 +252,7 @@ change `python3` in the script to that environment's Python.
 | `radams` | [Radam's Poké Stop](https://www.radamspokestop.co.uk), UK, GBP. English, Japanese, Korean and Chinese cards. | Reads the whole shop from its ordinary "shop all" pages once per run (about 10 requests for its ~2,000 products; the shop's robots.txt disallows Squarespace's JSON view, so the plugin doesn't use it). When no English cards are being searched it reads only the shop's Japanese, Korean or Chinese category pages instead (2 requests for Japanese cards). Each product carries language and set tags, so a card matches (`exact`) on language, the `#` number in the title, and its set: a set code in the title or set tag (`sv2a`, `cs4aC`) equal to its TCGdex set id, a promo code after the number (`001/SM-p`), or for English sets the set tag naming the set (`swsh-evolving-skies`). Titles are hand-written, so a listing whose URL gives a different number than its title, or an English listing whose title doesn't name the card, is only `uncertain`. Matched products in stock are opened one by one for their copies: each condition in stock is its own offer, with sale prices applied. Korean and most Chinese sets rarely match because TCGdex has few of their card lists. |
 | `japan2uk` | [Japan2UK](https://www.japan2uk.com), UK, GBP. Japanese cards only. | Reads the shop's whole Japanese singles and Japanese graded cards collections from its public Shopify product JSON once per run (about 88 requests for ~21,500 products, most of them sold out, so a run spends about a minute and a half here). Titles end in the set code and number, like `Pokemon Jolteon Reverse Holo Pokemon 151 sv2a 135/165 Japanese Single Card`, so a card matches (`exact`) on its number plus a set code equal to its TCGdex set id; promo numbers like `237/SV-P` match on the promo code instead, and a few XY-era codes are mapped to TCGdex's (`xy11 Bb` is XY11a, `XY1` Collection X is XY1a). Graded copies are labelled with their grade (`PSA 10`); vintage graded listings with no set code never match. Every print of a number (normal, reverse holo, Master Ball) is offered for that card, with the print in the title. |
 | `cardmarket` | [Cardmarket](https://www.cardmarket.com), EU, EUR. **Price guide, not listings.** | Cardmarket's site blocks automated reads and its API takes no new users, so this reads the price guide Cardmarket publishes as a free daily download (one ~15 MB file per run). The price is its `low`: the cheapest copy currently listed, in any language or condition and from any seller country, so an English near-mint copy shipped to the UK may cost more. Cards are tied to Cardmarket products through TCGdex, whose card records carry the Cardmarket product id (one TCGdex request per missing card), and link to the card's Cardmarket page. |
-| `pulseapi` | [PulseAPI](https://pulseapi.dev) (the pricing API behind [PulseTCG](https://pulsetcg.io)), GBP. **Market price, not listings.** Needs an API key. | Create a key on the PulseAPI dashboard and put it in a `.env` file next to `price_search.py` (copy `.env.example` to `.env` and fill it in: `PULSEAPI_KEY=pk_live_...`), or set `PULSEAPI_KEY` as an environment variable; without it the plugin is skipped. `.env` is git-ignored, so the key never gets committed. The price is PulseAPI's UK market price for a near-mint, ungraded copy (graded and played copies are separate PulseAPI products and are left out), or its blended UK+US price when there's no UK one, and links to the card's PulseTCG page. PulseAPI has its own set codes, so each set is found by trying the TCGdex set id with PulseAPI's language suffix (`m2_jp` for Japanese Inferno X), the id itself and its pokemontcg.io spelling (`sv03.5` is `sv3pt5`), and if none is a set PulseAPI has in that language, by searching a few missing cards by name (English name first) and taking the set their numbers come from, as long as more than one card agrees or the set name is close; the whole set is then read and cards match on set and number. Which PulseAPI set each of your sets turned out to be (or that it has none) is remembered in `.price_cache/pulseapi/set_ids_v2.json`, so later runs go straight to reading the set, and anything fetched in the last 6 hours comes from the cache. A card with several finishes gets the standard print's price, or each finish's (`likely`) when there's no standard print. Requests aren't spaced out: when PulseAPI's per-minute limit is reached (20 a minute on the free tier) the plugin waits as long as PulseAPI asks and carries on, and a used-up daily or monthly quota stops it with a message. Sets are read 500 cards a request on a paid key and 100 on the free tier. PulseAPI's batch endpoint isn't used: it only takes PulseAPI's own card ids, 50 at a time, so reading whole sets needs fewer requests. Only English, Japanese and Chinese prints are looked up. |
+| `pulseapi` | [PulseAPI](https://pulseapi.dev) (the pricing API behind [PulseTCG](https://pulsetcg.io)), GBP. **Market price, not listings.** Needs an API key. | Create a key on the PulseAPI dashboard and put it in `~/PokemonData/.env` (copy `.env.example` there as `.env` and fill it in: `PULSEAPI_KEY=pk_live_...`), or set `PULSEAPI_KEY` as an environment variable; without it the plugin is skipped. `.env` lives outside the repository, so the key never gets committed. The price is PulseAPI's UK market price for a near-mint, ungraded copy (graded and played copies are separate PulseAPI products and are left out), or its blended UK+US price when there's no UK one, and links to the card's PulseTCG page. PulseAPI has its own set codes, so each set is found by trying the TCGdex set id with PulseAPI's language suffix (`m2_jp` for Japanese Inferno X), the id itself and its pokemontcg.io spelling (`sv03.5` is `sv3pt5`), and if none is a set PulseAPI has in that language, by searching a few missing cards by name (English name first) and taking the set their numbers come from, as long as more than one card agrees or the set name is close; the whole set is then read and cards match on set and number. Which PulseAPI set each of your sets turned out to be (or that it has none) is remembered in `~/PokemonData/.price_cache/pulseapi/set_ids_v2.json`, so later runs go straight to reading the set, and anything fetched in the last 6 hours comes from the cache. A card with several finishes gets the standard print's price, or each finish's (`likely`) when there's no standard print. Requests aren't spaced out: when PulseAPI's per-minute limit is reached (20 a minute on the free tier) the plugin waits as long as PulseAPI asks and carries on, and a used-up daily or monthly quota stops it with a message. Sets are read 500 cards a request on a paid key and 100 on the free tier. PulseAPI's batch endpoint isn't used: it only takes PulseAPI's own card ids, 50 at a time, so reading whole sets needs fewer requests. Only English, Japanese and Chinese prints are looked up. |
 | `thepokestore` | [The Poké Store](https://thepokestore.co.uk), UK, GBP. Japanese cards only. | Reads the shop's whole Japanese singles collection from its public Shopify product JSON once per run (about 10 requests for its ~2,400 products, mostly Scarlet & Violet and Mega Evolution sets), plus its collection list. Titles are just `001/062 Froslass ex` and the set is the product's tag ("Raging Surf"); the shop's per-set collections are titled with the set code ("Raging Surf (sv3a)"), so a card matches (`exact`) on its number plus the tag's code equal to its TCGdex set id, or the tag equal to its set name. Each print in stock (Non-Holo, Holo, Poké Ball Holo, ...) is its own offer, named in the offer's title. The shop doesn't give a condition. |
 | `cosmiccollectables` | [Cosmic Collectables](https://cosmiccollectables.co.uk), UK, GBP. Japanese cards only. | Reads the shop's whole Japanese singles collection from its public Shopify product JSON once per run (3 requests for its ~720 products, mostly Sword & Shield and Sun & Moon sets; requests are 5 seconds apart because the site's Cloudflare front turns away quicker ones). Titles look like `SWORD AND SHIELD, Shiny Star V (s4a) - 216/190 : Cinderace (Shiny Vault)` or `Heat Wave Arena sv9a - 003/063 : ...`, so a card matches (`exact`) on its number plus the title's set code equal to its TCGdex set id; promo numbers like `069/SV-P` match on the promo code. Titles that only name the set (mostly PSA slabs, `Vmax Climax - 232/184`) borrow the code other titles give that set name. Korean copies in the collection never match. Graded slabs are labelled with their grade; other listings are near mint per their description. The shop's titles are hand-typed and a few carry the wrong number or name, so check the offer's title. |
 | `totalcards` | [Total Cards](https://totalcards.net), UK, GBP. Japanese cards only. | Reads the shop's whole Japanese singles collection from its public Shopify product JSON once per run (about 35 requests for its ~8,400 products, of which only ~600 are in stock). Titles look like `Pokemon - Mega Evolution - Nihil Zero - Mega Starmie ex - 111/080` with the shop's own English set names ("Hot Air Arena", "Glory of the Rocket Gang"), which the plugin maps to TCGdex set ids; a card matches (`exact`) on that set plus its number, or on the promo code of numbers like `124/S-P`. Some listings offer several languages as options even in this Japanese collection, so only Japanese copies count. Conditions on the Cardmarket scale are mapped (EX to LP, GD and LP to MP, PL to HP, PO to DMG); plain listings have no stated condition. Graded slabs are labelled from the title or options. |
@@ -300,7 +312,7 @@ the cheapest unless `--include-uncertain`).
 wants list in a single paste:
 
 ```bash
-python wants_list.py missing_cards.csv                      # cardmarket_wants.txt
+python wants_list.py                      # ~/PokemonData/cardmarket_wants.txt
 python wants_list.py missing.json --max-price 20            # leave out cards over £20
 python wants_list.py missing.json --set "Abyss Eye" --min-price 1 --out abyss_eye.txt
 ```
@@ -317,12 +329,12 @@ Cardmarket's report of what it added.
 
 | Flag | Meaning |
 |---|---|
-| `--out FILE` | Where to write the list (default `cardmarket_wants.txt`). |
+| `--out FILE` | Where to write the list (default `cardmarket_wants.txt` in `~/PokemonData`). |
 | `--csv-out FILE` | The per-card CSV (default: `--out` with `.csv`). |
 | `--set NAME` | Only include this set, by name or TCGdex set id (repeatable). |
 | `--max-price AMOUNT` / `--min-price AMOUNT` | Leave out cards priced above / below this. |
 | `--price FIELD` | Price-guide figure the filters use: `trend` (default, falls back to `low` when a card has none), `low`, `avg`, `avg7` or `avg30`. |
-| `--ordered FILE` | Cards already ordered, left out of the list (default `ordered.txt` next to the script, if it exists; see below). |
+| `--ordered FILE` | Cards already ordered, left out of the list (default `ordered.txt` in `~/PokemonData`, if it exists; see below). |
 | `--skip-unpriced` | Also leave out cards Cardmarket has no price for (kept by default). |
 | `--currency CODE` | Currency for prices and filters (default `GBP`). |
 
@@ -342,7 +354,7 @@ condition, so set those on the wants list after pasting.
 
 ## Cards on order (ordered.txt)
 
-`ordered.txt` (git-ignored, next to the scripts) lists cards you've bought
+`ordered.txt` (in `~/PokemonData`) lists cards you've bought
 that haven't reached your RareCandy collection yet, so price_search.py shades
 them and wants_list.py leaves them out. One card per line:
 
@@ -370,8 +382,8 @@ card, so they're left for you to remove and counted in the output. Pass
 ### Filling it in from order emails
 
 A Claude Cowork scheduled task can read order confirmations from your email
-and add their cards to `ordered.txt`. Give the task the folder holding this
-repository, schedule it daily, and use this prompt:
+and add their cards to `ordered.txt`. Give the task your `~/PokemonData`
+folder, schedule it daily, and use this prompt:
 
 ```
 Search my email for order confirmations for Pokémon TCG single cards from the
