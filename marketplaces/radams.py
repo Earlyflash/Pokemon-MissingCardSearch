@@ -5,7 +5,9 @@ in GBP, selling English, Japanese, Korean and Chinese singles.
 Squarespace's JSON view (`?format=json`) is disallowed by the shop's
 robots.txt, so the plugin reads the ordinary shop pages instead: the "shop
 all" listing shows 200 products a page (about 10 pages for the whole shop),
-read once per run and matched locally. Each product carries structured
+read once per run and matched locally. Japanese, Korean and Chinese cards
+are looked for in the shop's category page for their language instead,
+which is much shorter. Each product carries structured
 tags as CSS classes, which is what makes matching reliable:
 
     tag-language-japanese tag-graded-no tag-set-sv2a-151-jpn tag-rarity-poke-ball
@@ -44,6 +46,17 @@ from marketplaces.deckdhq import normalize_number, normalize_text
 SHOP = "https://www.radamspokestop.co.uk"
 LIST_URL = SHOP + "/shop-all"
 MAX_PAGES = 50  # safety stop; the shop was 10 pages in September 2026
+# The shop's category pages for each language. A set in one of these
+# languages is searched in its category (2 pages for Japanese cards rather
+# than 10 for the whole shop, in October 2026); English cards have no
+# category of their own, so they need the whole shop, and once it has been
+# read it serves every language.
+CATEGORY_URLS = {
+    "ja": SHOP + "/shop-all/japanese-pokmon-cards",
+    "ko": SHOP + "/shop-all/korean-pokmon-cards",
+    "zh-cn": SHOP + "/shop-all/chinese-cards",
+    "zh-tw": SHOP + "/shop-all/chinese-cards",
+}
 
 # The shop's language tags, as TCGdex dataset codes.
 LANGUAGES = {
@@ -289,21 +302,37 @@ class Radams(Marketplace):
     languages = set(LANGUAGES.values())
     min_interval = 1.0
 
-    def catalogue(self, ctx):
-        """Every product in the shop, fetched once per run."""
-        if "products" not in ctx.state:
-            products, seen, url = [], set(), LIST_URL
+    def listing(self, ctx, url):
+        """Every product on a listing (the whole shop or one category),
+        following its pages, fetched once per run."""
+        listings = ctx.state.setdefault("listings", {})
+        if url not in listings:
+            products, seen, page = [], set(), url
             for _ in range(MAX_PAGES):
-                rows, url = parse_listing_page(ctx.fetch(url))
+                rows, page = parse_listing_page(ctx.fetch(page))
                 for row in rows:
                     if row["url"] not in seen:
                         seen.add(row["url"])
                         products.append(prepare(row))
-                if not url:
+                if not page:
                     break
-            ctx.debug(f"{len(products)} products in the shop")
-            ctx.state["products"] = products
-        return ctx.state["products"]
+            ctx.debug(f"{len(products)} products in {url}")
+            listings[url] = products
+        return listings[url]
+
+    def catalogue(self, ctx, languages=()):
+        """The products cards in these languages could be among: their
+        categories' when each language has one, otherwise the whole shop."""
+        urls = {CATEGORY_URLS.get(lang) for lang in languages}
+        if not urls or None in urls or LIST_URL in ctx.state.get("listings", {}):
+            return self.listing(ctx, LIST_URL)
+        products, seen = [], set()
+        for url in sorted(urls):
+            for product in self.listing(ctx, url):
+                if product["url"] not in seen:
+                    seen.add(product["url"])
+                    products.append(product)
+        return products
 
     def offers_for(self, product, ctx):
         """(price, condition, quantity, label) for each copy in stock. Falls
@@ -321,7 +350,7 @@ class Radams(Marketplace):
 
     def search_set(self, cards, ctx):
         offers = []
-        for product in self.catalogue(ctx):
+        for product in self.catalogue(ctx, {c.tcgdex_lang for c in cards}):
             if product["sold_out"]:
                 continue
             hits = [(c, m) for c in cards for m in [match(product, c)] if m]

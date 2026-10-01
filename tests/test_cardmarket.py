@@ -39,7 +39,7 @@ class FakeContext(SearchContext):
         self.urls = []
         self.guide_error = guide_error
 
-    def fetch(self, url, headers=None, as_json=False, timeout=30):
+    def fetch(self, url, headers=None, as_json=False, timeout=30, max_age=None):
         self.urls.append(url)
         if url == cardmarket.PRICE_GUIDE_URL:
             if self.guide_error:

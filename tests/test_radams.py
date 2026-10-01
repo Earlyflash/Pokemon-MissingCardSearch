@@ -33,7 +33,7 @@ class FakeContext(SearchContext):
 
     def fetch(self, url, headers=None, as_json=False, timeout=30):
         self.urls.append(url)
-        if url == radams.LIST_URL:
+        if url == radams.LIST_URL or url in radams.CATEGORY_URLS.values():
             return fixture("radams_page1.html")
         if url == radams.SHOP + "/shop-all?offset=200":
             return fixture("radams_page2.html")
@@ -156,6 +156,19 @@ class MatchTests(unittest.TestCase):
         offers = search(card("SV10", "ロケット団の栄光", "109"))
         self.assertEqual({o.grade for o in offers}, {"PSA 10"})
 
+    def test_japanese_cards_read_only_the_japanese_category(self):
+        ctx = FakeContext()
+        search(card("SV2a", "151", "078"), ctx=ctx)
+        self.assertIn(radams.CATEGORY_URLS["ja"], ctx.urls)
+        self.assertNotIn(radams.LIST_URL, ctx.urls)
+
+    def test_english_cards_read_the_whole_shop_which_then_serves_every_language(self):
+        ctx = FakeContext()
+        search(card("swsh7", "Evolving Skies", "001", lang="en"), ctx=ctx)
+        search(card("SV2a", "151", "078"), ctx=ctx)
+        self.assertIn(radams.LIST_URL, ctx.urls)
+        self.assertNotIn(radams.CATEGORY_URLS["ja"], ctx.urls)
+
     def test_product_page_failure_falls_back_to_list_price(self):
         offers = search(card("SV2a", "151", "078"), ctx=FakeContext(OSError("timeout")))
         self.assertEqual([(o.price, o.condition, o.quantity) for o in offers], [(Decimal("1.30"), None, None)])
@@ -175,7 +188,7 @@ class MatchTests(unittest.TestCase):
         ctx = FakeContext()
         radams.PLUGIN.search_set([card("SV2a", "151", "078")], ctx)
         radams.PLUGIN.search_set([card("SV10", "", "109")], ctx)
-        self.assertEqual(ctx.urls.count(radams.LIST_URL), 1)
+        self.assertEqual(ctx.urls.count(radams.CATEGORY_URLS["ja"]), 1)
 
 
 if __name__ == "__main__":
