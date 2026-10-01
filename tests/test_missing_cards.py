@@ -184,6 +184,11 @@ class FindMissingTests(unittest.TestCase):
 class MainTests(unittest.TestCase):
     def setUp(self):
         missing_cards._LISTING_CACHE.clear()
+        # Never touch a real ordered.txt next to the script.
+        patcher = patch("missing_cards.DEFAULT_ORDERED",
+                        os.path.join(tempfile.gettempdir(), "no-such-ordered.txt"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     @patch("binder_cover._fetch_json", side_effect=fake_fetch)
     def test_end_to_end_csv(self, _):
@@ -254,6 +259,56 @@ class MainTests(unittest.TestCase):
         self.assertEqual(data["unmatched"],
                          [{"set_name": "Mystery", "language": "English",
                            "reason": "no TCGdex set found"}])
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_arrived_orders_move_out_of_ordered_txt(self, _):
+        # Own M2a 001 and me01 002. On order: one of each that arrived, one
+        # still missing, one from a set not in the collection and a name line.
+        export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1),
+                               ("Ivysaur", "Mega Evolution", "002", "English", 1)])
+        with tempfile.TemporaryDirectory() as d:
+            ordered = os.path.join(d, "ordered.txt")
+            with open(ordered, "w", encoding="utf-8") as f:
+                f.write("# on order\n"
+                        "M2a-001 | 2026-09-20 | Japan2UK | #1001 | Bulbasaur\n"
+                        "M2a-003 | 2026-09-20 | Japan2UK | #1001 | Mega Venusaur ex\n"
+                        "me01-002 | 2026-09-21 | Cardmarket | 555\n"
+                        "sv08-010 | 2026-09-21 | Cardmarket | 555\n"
+                        "1 Switch (Black Bolt)\n")
+            log = io.StringIO()
+            with redirect_stdout(log):
+                missing_cards.main(["--csv", export, "--out", os.path.join(d, "out.csv"),
+                                    "--min-complete", "90", "--ordered", ordered])
+            with open(ordered, encoding="utf-8") as f:
+                left = f.read()
+            with open(os.path.join(d, "ordered_arrived.txt"), encoding="utf-8") as f:
+                arrived = f.read().splitlines()
+        os.unlink(export)
+        # M2a is only 33% complete, under --min-complete, but still checked.
+        self.assertEqual(left, "# on order\n"
+                               "M2a-003 | 2026-09-20 | Japan2UK | #1001 | Mega Venusaur ex\n"
+                               "sv08-010 | 2026-09-21 | Cardmarket | 555\n"
+                               "1 Switch (Black Bolt)\n")
+        self.assertEqual([a.rsplit(" | arrived ", 1)[0] for a in arrived],
+                         ["M2a-001 | 2026-09-20 | Japan2UK | #1001 | Bulbasaur",
+                          "me01-002 | 2026-09-21 | Cardmarket | 555"])
+        self.assertIn("2 ordered card(s) now in the collection", log.getvalue())
+        self.assertIn("1 line(s)", log.getvalue())
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_keep_ordered_leaves_the_file_alone(self, _):
+        export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1)])
+        with tempfile.TemporaryDirectory() as d:
+            ordered = os.path.join(d, "ordered.txt")
+            with open(ordered, "w", encoding="utf-8") as f:
+                f.write("M2a-001\n")
+            with redirect_stdout(io.StringIO()):
+                missing_cards.main(["--csv", export, "--out", os.path.join(d, "out.csv"),
+                                    "--ordered", ordered, "--keep-ordered"])
+            with open(ordered, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "M2a-001\n")
+            self.assertFalse(os.path.exists(os.path.join(d, "ordered_arrived.txt")))
+        os.unlink(export)
 
     @patch("binder_cover._fetch_json", side_effect=fake_fetch)
     def test_default_threshold_leaves_out_incomplete_sets(self, _):
