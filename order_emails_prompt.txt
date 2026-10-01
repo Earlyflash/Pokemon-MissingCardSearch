@@ -1,0 +1,27 @@
+Search my email for order confirmations for Pokémon TCG single cards from the
+last 14 days (Cardmarket, eBay and UK card shops such as CardCargo, Japan2UK,
+Titan Cards, Tyneside TCG, NMD Collectables and Radam's Poké Stop).
+
+For each order, note the shop and the order number. Read ordered.txt and
+ordered_arrived.txt in the current folder. If either has a
+line containing " | <shop> | <order number> |", that order is already
+recorded: skip it.
+
+For every other order, add one line to the end of ordered.txt per single card
+(one line per copy; skip sealed product, sleeves and other accessories):
+
+<card id> | <order date as YYYY-MM-DD> | <shop> | <order number> | <the card as the email names it>
+
+The card id is the card's TCGdex id. Find it from TCGdex's set listing at
+https://api.tcgdex.net/v2/<lang>/sets/<set id> (lang "en" for English cards,
+"ja" for Japanese): use the "id" of the card whose localId matches the card's
+number in that set, e.g. me01-161 or M2a-003. If you can't pin down the card
+confidently, write the card as the email names it in place of the id, with
+its set and number, so it's still recorded.
+
+If an email cancels or refunds an order already in ordered.txt, put "# cancelled "
+at the start of that order's lines. Otherwise only add lines; never change or
+remove existing ones, and leave ordered_arrived.txt alone.
+
+Finish with a short summary: orders added, cards added, and any card you
+couldn't identify.
