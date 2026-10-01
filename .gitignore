@@ -7,3 +7,4 @@ cardmarket_wants*.txt
 ordered.txt
 ordered.txt.tmp
 ordered_arrived.txt
+nightly_search.log

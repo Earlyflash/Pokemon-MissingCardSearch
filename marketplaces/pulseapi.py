@@ -101,6 +101,7 @@ class PulseAPI(Marketplace):
     languages = None       # it prices English and Japanese cards; the language filter does the rest
     needs = ("PULSEAPI_KEY",)
     min_interval = 0       # rate limits are handled by waiting out 429s
+    retry_rate_limits = False  # ...here, so a used-up quota can be told apart
     price_guide = True
     guide_label = "market price"
     guide_prefix = ""

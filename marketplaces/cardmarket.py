@@ -23,6 +23,10 @@ from marketplaces.base import MATCH_EXACT, Marketplace, Offer
 
 PRICE_GUIDE_URL = "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_6.json"
 TCGDEX_CARD_URL = "https://api.tcgdex.net/v2/{lang}/cards/{card_id}"
+# A card's Cardmarket product never changes, and TCGdex ignores conditional
+# requests, so its card lookups are kept for this long rather than the
+# usual cache TTL.
+TCGDEX_MAX_AGE = 30 * 24 * 3600
 # Cardmarket redirects this to the product's page.
 PRODUCT_URL = "https://www.cardmarket.com/en/Pokemon/Products?idProduct={id}"
 
@@ -66,7 +70,7 @@ class Cardmarket(Marketplace):
         url = TCGDEX_CARD_URL.format(lang=urllib.parse.quote(card.tcgdex_lang or "en"),
                                      card_id=urllib.parse.quote(card.card_id))
         try:
-            pid = product_id(ctx.fetch(url, as_json=True))
+            pid = product_id(ctx.fetch(url, as_json=True, max_age=TCGDEX_MAX_AGE))
         except urllib.error.HTTPError as e:
             if e.code != 404:
                 raise

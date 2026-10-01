@@ -695,7 +695,13 @@ def build_arg_parser():
                    help="Also count offers a marketplace isn't sure are the right print.")
     p.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR,
                    help="Where marketplace responses are cached (default: .price_cache).")
-    p.add_argument("--no-cache", action="store_true", help="Always fetch fresh results.")
+    p.add_argument("--cache-ttl", type=float, default=6, metavar="HOURS",
+                   help="Use cached responses younger than this without asking the site "
+                        "(default: %(default)g). Older ones are checked with the site, which "
+                        "answers 'not modified' for pages that haven't changed; 0 checks every "
+                        "page.")
+    p.add_argument("--no-cache", action="store_true",
+                   help="Ignore the cache: download everything and save nothing.")
     p.add_argument("--env-file", default=DEFAULT_ENV_FILE, metavar="FILE",
                    help="File of KEY=value settings, such as PULSEAPI_KEY, read before the "
                         "marketplaces are chosen; variables already set in the environment win "
@@ -738,7 +744,8 @@ def main(argv=None):
     plugin_results = search_all(
         plugins, groups,
         lambda p: SearchContext(p, config={k: os.environ[k] for k in p.needs},
-                                cache_dir=cache_dir, verbose=args.verbose))
+                                cache_dir=cache_dir, cache_ttl=args.cache_ttl * 3600,
+                                verbose=args.verbose))
 
     guide_ids = {p.id for p in plugins if p.price_guide}
     offers = [pair for found, _ in plugin_results.values() for pair in found]

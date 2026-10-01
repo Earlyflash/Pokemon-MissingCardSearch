@@ -43,7 +43,8 @@ from collections import Counter
 from decimal import Decimal, ROUND_HALF_UP
 
 from marketplaces.base import SearchContext
-from marketplaces.cardmarket import PLUGIN as CARDMARKET, PRODUCT_URL, TCGDEX_CARD_URL, product_id
+from marketplaces.cardmarket import (PLUGIN as CARDMARKET, PRODUCT_URL, TCGDEX_CARD_URL,
+                                     TCGDEX_MAX_AGE, product_id)
 from price_search import (DEFAULT_CACHE_DIR, DEFAULT_ORDERED, exchange_rates, load_missing,
                           read_ordered)
 
@@ -125,7 +126,7 @@ def lookup_products(cards, ctx, workers=8):
         url = TCGDEX_CARD_URL.format(lang=urllib.parse.quote(c.tcgdex_lang or "en"),
                                      card_id=urllib.parse.quote(c.card_id))
         try:
-            return c.card_id, product_id(ctx.fetch(url, as_json=True))
+            return c.card_id, product_id(ctx.fetch(url, as_json=True, max_age=TCGDEX_MAX_AGE))
         except urllib.error.HTTPError as e:
             if e.code != 404:
                 ctx.log(f"{c.card_id}: TCGdex lookup failed ({e})")

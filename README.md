@@ -136,6 +136,17 @@ searched, and when it's done (with how many marketplaces are still going).
 The slowest shops read their whole catalogue, e.g. Japan2UK's ~88 pages take
 about a minute and a half, and later runs within 6 hours use the cache.
 
+Older cached pages aren't simply downloaded again: each one is checked with
+the site using the ETag / Last-Modified it came with, and a page that hasn't
+changed comes back as a short "304 Not Modified" and the cached copy is used
+(every shop plugin's site and Cardmarket's price file answer these; TCGdex
+doesn't, so its card lookups for Cardmarket are kept for 30 days instead, as
+a card's Cardmarket product never changes). If a site answers "429 Too Many
+Requests", the search waits as long as the site asks (30s, then 60s, then
+90s when it doesn't say), retries, and spaces that marketplace's requests
+further apart for the rest of the run; if a site can't be reached at all, an
+older cached copy is used and the progress line says so.
+
 When it's finished it prints a per-set summary (how many missing cards are for sale, and what
 buying the cheapest of each would cost) and writes the offers to
 `offers.csv`. Prices are the listed item price converted to one currency;
@@ -189,9 +200,36 @@ nobody has for sale.
 | `--ordered FILE` | Cards already ordered, shaded and tagged in the HTML table (default `ordered.txt` next to the script, if it exists). |
 | `--cheapest-only` | Write only the cheapest offer per card. |
 | `--include-uncertain` | Also count offers a marketplace isn't sure are the right print. |
-| `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached for 6 hours in `.price_cache/`. |
+| `--cache-ttl HOURS` | Use cached responses younger than this without asking the site (default 6). Older ones are re-checked with the site and reused if unchanged; `0` checks every page. |
+| `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached in `.price_cache/`; `--no-cache` downloads everything and saves nothing. |
 | `--env-file FILE` | File of `KEY=value` settings such as `PULSEAPI_KEY` (default `.env` next to `price_search.py`; git-ignored). Variables already set in the environment win. |
 | `-v` | Print every request made. |
+
+### Running it overnight
+
+Shops start answering "429 Too Many Requests" when they're read often, so
+the quickest daytime search is one that hardly asks them anything. Run the
+search overnight on your machine to refresh the cache (and wake up to a fresh
+`offers.csv` and `price_table.html`), then search during the day with
+`--cache-ttl 24` so it reads last night's pages from disk:
+
+```bash
+python price_search.py missing_cards.csv --cache-ttl 24
+```
+
+`nightly_search.sh` runs the overnight search and appends its output to
+`nightly_search.log`. Schedule it for 3am every day with cron (`crontab -e`,
+using the folder you cloned into):
+
+```
+0 3 * * * /path/to/Pokemon-MissingCardSearch/nightly_search.sh
+```
+
+The machine has to be on at 3am; cron doesn't catch up on a missed run
+(`anacron` or a systemd timer with `Persistent=true` does, if you need
+that). It searches the `missing_cards.csv` you last wrote, so re-run
+`missing_cards.py` when your collection changes. If you use a virtualenv,
+change `python3` in the script to that environment's Python.
 
 ### Marketplaces
 
@@ -199,7 +237,7 @@ nobody has for sale.
 |---|---|---|
 | `deckdhq` | [DeckdHQ](https://www.deckdhq.com), UK, GBP | Reads every active Pokémon listing from the site's public API once per run (about 11 requests). Listings with a set name match on set, card number and language (`exact`). eBay imports have no set name, so they match on the set name appearing in the title plus the number (`likely`), as do listings with no language. Promo listings match across DeckdHQ's various promo set names only when the number carries the card's set prefix (`SWSH277`, `SVP 176`) or the set name names the same promo series (e.g. "Scarlet & Violet Black Star Promos" for SVP); numbers like `063/SV-P` are Japanese promos and never match English promo sets, and Celebrations Classic Collection cards match on name because sellers use the original print numbers. A set code in the set name (`s12a VSTAR Universe`) outweighs a contradicting language tag. Prices include DeckdHQ's buyer fee. |
 | `cardcargo` | [CardCargo](https://cardcargo.com), UK, GBP. Japanese cards only. | Reads the shop's whole Japanese singles collection from its public Shopify product JSON once per run (two requests for its ~400 products). Titles all look like `(#173/165) Pikachu - Holo [SV2a: Pokemon Card 151 (JPN)]`, so a card matches (`exact`) on its number plus the set name, with or without the code prefix, or a code prefix equal to its TCGdex set id; promo numbers like `152/S-P` match on the promo code instead. Vintage listings numbered `NO. 008` carry a Pokédex number, not a card number, so they never match. Each copy in stock is its own offer with its own condition, linked straight to that copy. |
-| `radams` | [Radam's Poké Stop](https://www.radamspokestop.co.uk), UK, GBP. English, Japanese, Korean and Chinese cards. | Reads the whole shop from its ordinary "shop all" pages once per run (about 10 requests for its ~2,000 products; the shop's robots.txt disallows Squarespace's JSON view, so the plugin doesn't use it). Each product carries language and set tags, so a card matches (`exact`) on language, the `#` number in the title, and its set: a set code in the title or set tag (`sv2a`, `cs4aC`) equal to its TCGdex set id, a promo code after the number (`001/SM-p`), or for English sets the set tag naming the set (`swsh-evolving-skies`). Titles are hand-written, so a listing whose URL gives a different number than its title, or an English listing whose title doesn't name the card, is only `uncertain`. Matched products in stock are opened one by one for their copies: each condition in stock is its own offer, with sale prices applied. Korean and most Chinese sets rarely match because TCGdex has few of their card lists. |
+| `radams` | [Radam's Poké Stop](https://www.radamspokestop.co.uk), UK, GBP. English, Japanese, Korean and Chinese cards. | Reads the whole shop from its ordinary "shop all" pages once per run (about 10 requests for its ~2,000 products; the shop's robots.txt disallows Squarespace's JSON view, so the plugin doesn't use it). When no English cards are being searched it reads only the shop's Japanese, Korean or Chinese category pages instead (2 requests for Japanese cards). Each product carries language and set tags, so a card matches (`exact`) on language, the `#` number in the title, and its set: a set code in the title or set tag (`sv2a`, `cs4aC`) equal to its TCGdex set id, a promo code after the number (`001/SM-p`), or for English sets the set tag naming the set (`swsh-evolving-skies`). Titles are hand-written, so a listing whose URL gives a different number than its title, or an English listing whose title doesn't name the card, is only `uncertain`. Matched products in stock are opened one by one for their copies: each condition in stock is its own offer, with sale prices applied. Korean and most Chinese sets rarely match because TCGdex has few of their card lists. |
 | `japan2uk` | [Japan2UK](https://www.japan2uk.com), UK, GBP. Japanese cards only. | Reads the shop's whole Japanese singles and Japanese graded cards collections from its public Shopify product JSON once per run (about 88 requests for ~21,500 products, most of them sold out, so a run spends about a minute and a half here). Titles end in the set code and number, like `Pokemon Jolteon Reverse Holo Pokemon 151 sv2a 135/165 Japanese Single Card`, so a card matches (`exact`) on its number plus a set code equal to its TCGdex set id; promo numbers like `237/SV-P` match on the promo code instead, and a few XY-era codes are mapped to TCGdex's (`xy11 Bb` is XY11a, `XY1` Collection X is XY1a). Graded copies are labelled with their grade (`PSA 10`); vintage graded listings with no set code never match. Every print of a number (normal, reverse holo, Master Ball) is offered for that card, with the print in the title. |
 | `cardmarket` | [Cardmarket](https://www.cardmarket.com), EU, EUR. **Price guide, not listings.** | Cardmarket's site blocks automated reads and its API takes no new users, so this reads the price guide Cardmarket publishes as a free daily download (one ~15 MB file per run). The price is its `low`: the cheapest copy currently listed, in any language or condition and from any seller country, so an English near-mint copy shipped to the UK may cost more. Cards are tied to Cardmarket products through TCGdex, whose card records carry the Cardmarket product id (one TCGdex request per missing card), and link to the card's Cardmarket page. |
 | `pulseapi` | [PulseAPI](https://pulseapi.dev) (the pricing API behind [PulseTCG](https://pulsetcg.io)), GBP. **Market price, not listings.** Needs an API key. | Create a key on the PulseAPI dashboard and put it in a `.env` file next to `price_search.py` (copy `.env.example` to `.env` and fill it in: `PULSEAPI_KEY=pk_live_...`), or set `PULSEAPI_KEY` as an environment variable; without it the plugin is skipped. `.env` is git-ignored, so the key never gets committed. The price is PulseAPI's UK market price for a near-mint, ungraded copy (graded and played copies are separate PulseAPI products and are left out), or its blended UK+US price when there's no UK one, and links to the card's PulseTCG page. PulseAPI has its own set codes, so each set is found by trying the TCGdex set id with PulseAPI's language suffix (`m2_jp` for Japanese Inferno X), the id itself and its pokemontcg.io spelling (`sv03.5` is `sv3pt5`), and if none is a set PulseAPI has in that language, by searching a few missing cards by name (English name first) and taking the set their numbers come from, as long as more than one card agrees or the set name is close; the whole set is then read and cards match on set and number. Which PulseAPI set each of your sets turned out to be (or that it has none) is remembered in `.price_cache/pulseapi/set_ids_v2.json`, so later runs go straight to reading the set, and anything fetched in the last 6 hours comes from the cache. A card with several finishes gets the standard print's price, or each finish's (`likely`) when there's no standard print. Requests aren't spaced out: when PulseAPI's per-minute limit is reached (20 a minute on the free tier) the plugin waits as long as PulseAPI asks and carries on, and a used-up daily or monthly quota stops it with a message. Sets are read 500 cards a request on a paid key and 100 on the free tier. PulseAPI's batch endpoint isn't used: it only takes PulseAPI's own card ids, 50 at a time, so reading whole sets needs fewer requests. Only English, Japanese and Chinese prints are looked up. |
