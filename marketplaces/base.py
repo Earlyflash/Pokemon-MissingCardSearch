@@ -11,12 +11,15 @@ How a plugin gets its data is up to it: an official API, reading web pages,
 driving a browser, or a file the user exported by hand all fit the same
 contract.
 """
+import email.utils
+import gzip
 import hashlib
 import json
 import os
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from decimal import Decimal
@@ -93,6 +96,9 @@ class Marketplace:
     # True for a price guide whose price is a card's market value (not a
     # cheapest copy), so the price table flags listings priced above it.
     market_reference = False
+    # False for a plugin that handles 429 (Too Many Requests) itself; otherwise
+    # the core waits as long as the site asks, retries, and slows the plugin.
+    retry_rate_limits = True
 
     def search(self, card, ctx):
         """Return a list of Offers for one MissingCard."""
@@ -116,6 +122,33 @@ class Marketplace:
         return self.languages is None or card.tcgdex_lang in self.languages
 
 
+# A 429 (Too Many Requests) is waited out and retried this many times, as long
+# as the site doesn't ask for a longer wait than MAX_RATE_LIMIT_WAIT seconds.
+# With no Retry-After header the waits are RATE_LIMIT_WAIT, then twice that,
+# and so on. After a 429 the plugin's requests are spaced twice as far apart
+# for the rest of the run, up to MAX_MIN_INTERVAL seconds.
+MAX_RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_WAIT = 30
+MAX_RATE_LIMIT_WAIT = 120
+MAX_MIN_INTERVAL = 10.0
+
+
+def retry_after(headers, default):
+    """Seconds a 429's Retry-After header asks for (a number or an HTTP
+    date), or `default` when it doesn't say."""
+    value = (headers or {}).get("Retry-After")
+    if not value:
+        return default
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        return max(0.0, email.utils.parsedate_to_datetime(value).timestamp() - time.time())
+    except (TypeError, ValueError):
+        return default
+
+
 class SearchContext:
     """What the core hands a plugin for one run: its settings, a paced and
     cached HTTP fetch, a logger, and `state` for anything it wants to keep
@@ -135,12 +168,15 @@ class SearchContext:
         self.verbose = verbose
         self.state = {}  # scratch space a plugin can keep for the length of one run
         self._min_interval = plugin.min_interval
+        self._retry_rate_limits = plugin.retry_rate_limits
         self._last_request = None
         self._lock = threading.Lock()
         self._sleep = sleep
         self._clock = clock
         self.fetched = 0       # pages downloaded this run
-        self.cache_hits = 0    # pages read from the on-disk cache instead
+        self.cache_hits = 0    # pages read from the on-disk cache without asking the site
+        self.unchanged = 0     # cached pages the site said were unchanged (304 Not Modified)
+        self.stale = 0         # cached pages used because the site couldn't be reached
         self._progress_interval = progress_interval
         self._progress_stream = progress_stream
         self._last_progress = clock()
@@ -158,15 +194,18 @@ class SearchContext:
         stream.flush()
 
     def pages_summary(self):
-        cached = f", {self.cache_hits} from cache" if self.cache_hits else ""
-        return f"{self.fetched} page(s) fetched{cached}"
+        parts = [f"{self.fetched} page(s) fetched"]
+        if self.unchanged:
+            parts.append(f"{self.unchanged} unchanged since last run")
+        if self.cache_hits:
+            parts.append(f"{self.cache_hits} from cache")
+        if self.stale:
+            parts.append(f"{self.stale} old cached cop(ies) used")
+        return ", ".join(parts)
 
-    def _counted(self, cache_hit):
+    def _counted(self, kind):
         with self._lock:
-            if cache_hit:
-                self.cache_hits += 1
-            else:
-                self.fetched += 1
+            setattr(self, kind, getattr(self, kind) + 1)
             now = self._clock()
             due = now - self._last_progress >= self._progress_interval
             if due:
@@ -182,32 +221,109 @@ class SearchContext:
         key = hashlib.sha256(json.dumps([url, sorted((headers or {}).items())]).encode()).hexdigest()
         return os.path.join(self.cache_dir, self.plugin_id, key[:32])
 
-    def fetch(self, url, headers=None, as_json=False, timeout=30):
-        """GET `url` and return its body (text, or parsed JSON with as_json),
-        from the on-disk cache when a fresh copy exists. Requests from one
-        plugin are spaced at least `min_interval` seconds apart."""
-        path = self._cache_path(url, headers) if self.cache_dir else None
-        if path and os.path.isfile(path) and time.time() - os.path.getmtime(path) < self.cache_ttl:
-            self.debug(f"cache hit {url}")
-            with open(path, encoding="utf-8") as f:
-                body = f.read()
-            body_from_cache = True
-        else:
-            body_from_cache = False
-            with self._lock:
-                if self._last_request is not None:
-                    wait = self._min_interval - (self._clock() - self._last_request)
-                    if wait > 0:
-                        self._sleep(wait)
-                self._last_request = self._clock()
+    def _pace(self):
+        with self._lock:
+            if self._last_request is not None:
+                wait = self._min_interval - (self._clock() - self._last_request)
+                if wait > 0:
+                    self._sleep(wait)
+            self._last_request = self._clock()
+
+    def _get(self, url, headers, timeout):
+        """(status, body text or None, response headers) for one paced GET.
+        304 Not Modified comes back as a status rather than an error, and a
+        429 is waited out and retried (unless the plugin handles its own)."""
+        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            self._pace()
             self.debug(f"GET {url}")
             req = urllib.request.Request(url, headers={"User-Agent": "Pokemon-MissingCardSearch",
-                                                       **(headers or {})})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read().decode(resp.headers.get_content_charset() or "utf-8")
-            if path:
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(body)
-        self._counted(cache_hit=body_from_cache)
+                                                       "Accept-Encoding": "gzip", **headers})
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read()
+                    if (resp.headers.get("Content-Encoding") or "").lower() == "gzip":
+                        raw = gzip.decompress(raw)
+                    return resp.status, raw.decode(resp.headers.get_content_charset() or "utf-8"), resp.headers
+            except urllib.error.HTTPError as e:
+                if e.code == 304:
+                    return 304, None, e.headers
+                if e.code != 429 or not self._retry_rate_limits or attempt == MAX_RATE_LIMIT_RETRIES:
+                    raise
+                wait = retry_after(e.headers, RATE_LIMIT_WAIT * (attempt + 1))
+                if wait > MAX_RATE_LIMIT_WAIT:
+                    raise
+                with self._lock:
+                    self._min_interval = min(max(self._min_interval * 2, 1.0), MAX_MIN_INTERVAL)
+                self.progress(f"rate limited (429); waiting {wait:.0f}s, then spacing requests "
+                              f"{self._min_interval:g}s apart")
+                self._sleep(wait)
+
+    def fetch(self, url, headers=None, as_json=False, timeout=30, max_age=None):
+        """GET `url` and return its body (text, or parsed JSON with as_json).
+
+        A cached copy younger than the cache TTL (or `max_age` seconds, for
+        data that hardly ever changes, if that's longer) is used without
+        asking the site. An older one is checked with the site using its
+        ETag / Last-Modified, so an unchanged page costs a 304 rather than a
+        download, and is still used if the site can't be reached. Requests
+        from one plugin are spaced at least `min_interval` seconds apart."""
+        headers = headers or {}
+        path = self._cache_path(url, headers) if self.cache_dir else None
+        age = None
+        if path and os.path.isfile(path):
+            age = time.time() - os.path.getmtime(path)
+            if age < max(self.cache_ttl, max_age or 0):
+                self.debug(f"cache hit {url}")
+                self._counted("cache_hits")
+                return self._parse(self._read(path), as_json)
+        validators = {}
+        if age is not None:
+            meta = self._read_meta(path)
+            if meta.get("etag"):
+                validators["If-None-Match"] = meta["etag"]
+            if meta.get("last_modified"):
+                validators["If-Modified-Since"] = meta["last_modified"]
+        try:
+            status, body, resp_headers = self._get(url, {**headers, **validators}, timeout)
+        except Exception as e:  # noqa: BLE001 -- an old copy beats no copy
+            # Only for a site that's down or still rate limiting; a 404 or a
+            # refused key is an answer, not an outage.
+            gone = isinstance(e, urllib.error.HTTPError) and e.code < 500 and e.code != 429
+            if age is None or gone:
+                raise
+            if not self.stale:
+                self.progress(f"couldn't refresh from the site ({e}); using cached copies "
+                              f"(this one is {age / 3600:.0f}h old)")
+            self._counted("stale")
+            return self._parse(self._read(path), as_json)
+        if status == 304:
+            self.debug(f"not modified {url}")
+            os.utime(path)  # fresh again for another cache TTL
+            self._counted("unchanged")
+            return self._parse(self._read(path), as_json)
+        if path:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(body)
+            with open(path + ".meta", "w", encoding="utf-8") as f:
+                json.dump({"url": url, "etag": resp_headers.get("ETag"),
+                           "last_modified": resp_headers.get("Last-Modified")}, f)
+        self._counted("fetched")
+        return self._parse(body, as_json)
+
+    @staticmethod
+    def _parse(body, as_json):
         return json.loads(body) if as_json else body
+
+    @staticmethod
+    def _read(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    @staticmethod
+    def _read_meta(path):
+        try:
+            with open(path + ".meta", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}

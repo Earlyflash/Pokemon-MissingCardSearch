@@ -133,6 +133,17 @@ searched, and when it's done (with how many marketplaces are still going).
 The slowest shops read their whole catalogue, e.g. Japan2UK's ~88 pages take
 about a minute and a half, and later runs within 6 hours use the cache.
 
+Older cached pages aren't simply downloaded again: each one is checked with
+the site using the ETag / Last-Modified it came with, and a page that hasn't
+changed comes back as a short "304 Not Modified" and the cached copy is used
+(every shop plugin's site and Cardmarket's price file answer these; TCGdex
+doesn't, so its card lookups for Cardmarket are kept for 30 days instead, as
+a card's Cardmarket product never changes). If a site answers "429 Too Many
+Requests", the search waits as long as the site asks (30s, then 60s, then
+90s when it doesn't say), retries, and spaces that marketplace's requests
+further apart for the rest of the run; if a site can't be reached at all, an
+older cached copy is used and the progress line says so.
+
 When it's finished it prints a per-set summary (how many missing cards are for sale, and what
 buying the cheapest of each would cost) and writes the offers to
 `offers.csv`. Prices are the listed item price converted to one currency;
@@ -186,7 +197,8 @@ nobody has for sale.
 | `--ordered FILE` | Cards already ordered, shaded and tagged in the HTML table (default `ordered.txt` next to the script, if it exists). |
 | `--cheapest-only` | Write only the cheapest offer per card. |
 | `--include-uncertain` | Also count offers a marketplace isn't sure are the right print. |
-| `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached for 6 hours in `.price_cache/`. |
+| `--cache-ttl HOURS` | Use cached responses younger than this without asking the site (default 6). Older ones are re-checked with the site and reused if unchanged; `0` checks every page. |
+| `--no-cache` / `--cache-dir DIR` | Marketplace responses are cached in `.price_cache/`; `--no-cache` downloads everything and saves nothing. |
 | `--env-file FILE` | File of `KEY=value` settings such as `PULSEAPI_KEY` (default `.env` next to `price_search.py`; git-ignored). Variables already set in the environment win. |
 | `-v` | Print every request made. |
 

@@ -60,7 +60,7 @@ GUIDE = {"priceGuides": [
 ]}
 
 
-def fake_fetch(self, url, headers=None, as_json=False, timeout=30):
+def fake_fetch(self, url, headers=None, as_json=False, timeout=30, max_age=None):
     if url == wants_list.PRODUCTS_URL:
         return PRODUCTS
     if url == wants_list.NONSINGLES_URL:

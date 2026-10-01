@@ -1,13 +1,17 @@
 import csv
+import gzip
 import html.parser
 import io
 import json
 import os
 import sys
 import tempfile
+import time
 import unittest
+import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
 from decimal import Decimal
+from email.message import Message
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -594,13 +598,188 @@ class HtmlOnlyTests(unittest.TestCase):
 
 class SearchContextTests(unittest.TestCase):
     class FakeResponse(io.BytesIO):
-        headers = type("H", (), {"get_content_charset": staticmethod(lambda: "utf-8")})()
+        status = 200
+
+        def __init__(self, body, headers=None):
+            super().__init__(body)
+            self.headers = Message()
+            self.headers["Content-Type"] = "application/json; charset=utf-8"
+            for k, v in (headers or {}).items():
+                self.headers[k] = v
 
         def __enter__(self):
             return self
 
         def __exit__(self, *a):
             return False
+
+    @staticmethod
+    def http_error(req, code, headers=None):
+        h = Message()
+        for k, v in (headers or {}).items():
+            h[k] = v
+        return urllib.error.HTTPError(req.full_url, code, "", h, io.BytesIO())
+
+    def cached_ctx(self, plugin=None, **kw):
+        """A context with an empty cache, a clock that doesn't move and
+        sleeps recorded in self.sleeps."""
+        self.sleeps = []
+        return SearchContext(plugin or EuroShop(), cache_dir=tempfile.mkdtemp(),
+                             sleep=self.sleeps.append, clock=lambda: 0.0,
+                             progress_stream=io.StringIO(), **kw)
+
+    @staticmethod
+    def age(ctx, url, seconds):
+        path = ctx._cache_path(url, {})
+        t = os.path.getmtime(path) - seconds
+        os.utime(path, (t, t))
+        return path
+
+    def test_an_expired_page_is_checked_with_its_etag_and_reused_when_unchanged(self):
+        ctx = self.cached_ctx(cache_ttl=3600)
+        sent = []
+
+        def urlopen(req, timeout):
+            sent.append((req.get_header("If-none-match"), req.get_header("If-modified-since")))
+            if len(sent) == 1:
+                return self.FakeResponse(b'{"n": 1}', {"ETag": 'W/"abc"',
+                                                       "Last-Modified": "Wed, 30 Sep 2026 07:55:21 GMT"})
+            raise self.http_error(req, 304)
+
+        with patch("urllib.request.urlopen", urlopen):
+            ctx.fetch("https://a.example/1", as_json=True)
+            path = self.age(ctx, "https://a.example/1", 7200)
+            self.assertEqual(ctx.fetch("https://a.example/1", as_json=True), {"n": 1})
+            ctx.fetch("https://a.example/1", as_json=True)  # fresh again after the 304
+        self.assertEqual(sent, [(None, None), ('W/"abc"', "Wed, 30 Sep 2026 07:55:21 GMT")])
+        self.assertLess(time.time() - os.path.getmtime(path), 60)
+        self.assertEqual((ctx.fetched, ctx.unchanged, ctx.cache_hits), (1, 1, 1))
+        self.assertEqual(ctx.pages_summary(),
+                         "1 page(s) fetched, 1 unchanged since last run, 1 from cache")
+
+    def test_an_expired_page_that_changed_is_replaced(self):
+        ctx = self.cached_ctx(cache_ttl=0)
+        bodies = [(b'{"n": 1}', {"ETag": '"v1"'}), (b'{"n": 2}', {"ETag": '"v2"'})]
+        sent = []
+
+        def urlopen(req, timeout):
+            sent.append(req.get_header("If-none-match"))
+            if bodies:
+                return self.FakeResponse(*bodies.pop(0))
+            raise self.http_error(req, 304)
+
+        with patch("urllib.request.urlopen", urlopen):
+            ctx.fetch("https://a.example/1", as_json=True)
+            self.assertEqual(ctx.fetch("https://a.example/1", as_json=True), {"n": 2})
+            self.assertEqual(ctx.fetch("https://a.example/1", as_json=True), {"n": 2})
+        self.assertEqual(sent, [None, '"v1"', '"v2"'])
+
+    def test_a_page_without_validators_is_downloaded_again_once_expired(self):
+        ctx = self.cached_ctx(cache_ttl=0)
+        sent = []
+
+        def urlopen(req, timeout):
+            sent.append(req.header_items())
+            return self.FakeResponse(b"{}")
+
+        with patch("urllib.request.urlopen", urlopen):
+            ctx.fetch("https://a.example/1")
+            ctx.fetch("https://a.example/1")
+        self.assertEqual(sent[0], sent[1])
+        self.assertEqual(ctx.fetched, 2)
+
+    def test_max_age_keeps_a_page_longer_than_the_cache_ttl(self):
+        ctx = self.cached_ctx(cache_ttl=3600)
+        calls = []
+
+        def urlopen(req, timeout):
+            calls.append(req.full_url)
+            return self.FakeResponse(b"{}")
+
+        with patch("urllib.request.urlopen", urlopen):
+            ctx.fetch("https://a.example/1", max_age=86400)
+            self.age(ctx, "https://a.example/1", 7200)
+            ctx.fetch("https://a.example/1", max_age=86400)
+        self.assertEqual(len(calls), 1)
+
+    def test_gzipped_responses_are_unpacked(self):
+        ctx = self.cached_ctx()
+        with patch("urllib.request.urlopen", lambda req, timeout: self.FakeResponse(
+                gzip.compress('{"name": "ピカチュウ"}'.encode()), {"Content-Encoding": "gzip"})):
+            self.assertEqual(ctx.fetch("https://a.example/1", as_json=True), {"name": "ピカチュウ"})
+
+    def test_a_429_is_waited_out_and_slows_the_plugin_down(self):
+        plugin = EuroShop()
+        plugin.min_interval = 1.0
+        ctx = self.cached_ctx(plugin)
+        answers = [{"Retry-After": "40"}, {}, None]
+
+        def urlopen(req, timeout):
+            a = answers.pop(0)
+            if a is None:
+                return self.FakeResponse(b"{}")
+            raise self.http_error(req, 429, a)
+
+        with patch("urllib.request.urlopen", urlopen):
+            self.assertEqual(ctx.fetch("https://a.example/1", as_json=True), {})
+        waits = [s for s in self.sleeps if s >= 30]
+        self.assertEqual(waits, [40.0, 60.0])  # as asked, then the default backoff
+        self.assertEqual(ctx._min_interval, 4.0)
+
+    def test_a_429_asking_for_a_long_wait_is_raised(self):
+        ctx = self.cached_ctx()
+
+        def urlopen(req, timeout):
+            raise self.http_error(req, 429, {"Retry-After": "3600"})
+
+        with patch("urllib.request.urlopen", urlopen), \
+                self.assertRaises(urllib.error.HTTPError):
+            ctx.fetch("https://a.example/1")
+        self.assertEqual(self.sleeps, [])
+
+    def test_a_plugin_that_handles_its_own_429s_gets_them_straight_away(self):
+        plugin = EuroShop()
+        plugin.retry_rate_limits = False
+        ctx = self.cached_ctx(plugin)
+
+        def urlopen(req, timeout):
+            raise self.http_error(req, 429, {"Retry-After": "5"})
+
+        with patch("urllib.request.urlopen", urlopen), \
+                self.assertRaises(urllib.error.HTTPError):
+            ctx.fetch("https://a.example/1")
+
+    def test_an_old_copy_is_used_when_the_site_cant_be_reached(self):
+        ctx = self.cached_ctx(cache_ttl=0)
+        answers = [b'{"n": 1}', urllib.error.URLError("timed out"), urllib.error.URLError("timed out")]
+
+        def urlopen(req, timeout):
+            a = answers.pop(0)
+            if isinstance(a, Exception):
+                raise a
+            return self.FakeResponse(a)
+
+        with patch("urllib.request.urlopen", urlopen):
+            ctx.fetch("https://a.example/1", as_json=True)
+            self.assertEqual(ctx.fetch("https://a.example/1", as_json=True), {"n": 1})
+            self.assertEqual(ctx.fetch("https://a.example/1", as_json=True), {"n": 1})
+        self.assertEqual(ctx.stale, 2)
+        self.assertEqual(len(ctx._progress_stream.getvalue().splitlines()), 1)  # said once
+
+    def test_a_404_isnt_hidden_by_an_old_copy(self):
+        ctx = self.cached_ctx(cache_ttl=0)
+        answers = [b"{}", 404]
+
+        def urlopen(req, timeout):
+            a = answers.pop(0)
+            if a == 404:
+                raise self.http_error(req, 404)
+            return self.FakeResponse(a)
+
+        with patch("urllib.request.urlopen", urlopen):
+            ctx.fetch("https://a.example/1")
+            with self.assertRaises(urllib.error.HTTPError):
+                ctx.fetch("https://a.example/1")
 
     def test_fetch_caches_on_disk_and_paces_requests(self):
         plugin = EuroShop()
