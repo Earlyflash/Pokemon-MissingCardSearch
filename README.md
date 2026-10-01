@@ -239,9 +239,28 @@ using the folder you cloned into):
 
 The machine has to be on at 3am; cron doesn't catch up on a missed run
 (`anacron` or a systemd timer with `Persistent=true` does, if you need
-that). It searches the `missing_cards.csv` you last wrote, so re-run
-`missing_cards.py` when your collection changes. If you use a virtualenv,
-change `python3` in the script to that environment's Python.
+that). If you use a virtualenv, change `python3` in the script to that
+environment's Python.
+
+On its own it searches the `missing_cards.csv` you last wrote. Set
+`RARECANDY_PROFILE` and it re-exports that RareCandy profile and rewrites
+`missing_cards.csv` first, so cards that have arrived drop out of
+`ordered.txt` overnight too (this needs Node.js and RareCandyExporter's
+`npm install`, as for `--profile`). To also pick up new orders from your
+email first (see [Filling it in from order emails](#filling-it-in-from-order-emails)),
+run `nightly_orders.sh` before it:
+
+```
+RARECANDY_PROFILE=Earlyflash
+0 3 * * * /path/to/Pokemon-MissingCardSearch/nightly_orders.sh; /path/to/Pokemon-MissingCardSearch/nightly_search.sh
+```
+
+On a headless Linux box without Puppeteer's own Chrome, install your
+distribution's Chromium, run `npm install` with `PUPPETEER_SKIP_DOWNLOAD=1`, and
+add `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium` to the crontab. In a
+container that blocks user namespaces (such as an unprivileged LXC),
+Chromium can't start its sandbox; on Debian, also add
+`CHROMIUM_FLAGS=--no-sandbox`.
 
 ### Marketplaces
 
@@ -381,39 +400,19 @@ card, so they're left for you to remove and counted in the output. Pass
 
 ### Filling it in from order emails
 
-A Claude Cowork scheduled task can read order confirmations from your email
-and add their cards to `ordered.txt`. Give the task your `~/PokemonData`
-folder, schedule it daily, and use this prompt:
+Claude can read order confirmations from your email and add their cards to
+`ordered.txt`. The prompt is in `order_emails_prompt.txt`.
 
-```
-Search my email for order confirmations for Pokémon TCG single cards from the
-last 14 days (Cardmarket, eBay and UK card shops such as CardCargo, Japan2UK,
-Titan Cards, Tyneside TCG, NMD Collectables and Radam's Poké Stop).
-
-For each order, note the shop and the order number. Read ordered.txt and
-ordered_arrived.txt in the Pokemon-MissingCardSearch folder. If either has a
-line containing " | <shop> | <order number> |", that order is already
-recorded: skip it.
-
-For every other order, add one line to the end of ordered.txt per single card
-(one line per copy; skip sealed product, sleeves and other accessories):
-
-<card id> | <order date as YYYY-MM-DD> | <shop> | <order number> | <the card as the email names it>
-
-The card id is the card's TCGdex id. Find it from TCGdex's set listing at
-https://api.tcgdex.net/v2/<lang>/sets/<set id> (lang "en" for English cards,
-"ja" for Japanese): use the "id" of the card whose localId matches the card's
-number in that set, e.g. me01-161 or M2a-003. If you can't pin down the card
-confidently, write the card as the email names it in place of the id, with
-its set and number, so it's still recorded.
-
-If an email cancels or refunds an order already in ordered.txt, put "# cancelled "
-at the start of that order's lines. Otherwise only add lines; never change or
-remove existing ones, and leave ordered_arrived.txt alone.
-
-Finish with a short summary: orders added, cards added, and any card you
-couldn't identify.
-```
+- **On a machine that's always on:** `nightly_orders.sh` runs it with the
+  Claude Code CLI (`claude -p`), which has to be logged in with your email
+  connected (Microsoft 365 by default; set `ORDER_EMAIL_TOOLS` to the tool
+  names of another email connector). Claude may only search and read email,
+  read `~/PokemonData`, edit `ordered.txt` and fetch from TCGdex. Its report
+  is appended to `~/PokemonData/nightly_orders.log`. Schedule it before
+  `nightly_search.sh` (see [Running it overnight](#running-it-overnight)).
+- **Or in Claude Cowork:** make a daily scheduled task, give it your
+  `~/PokemonData` folder, and paste in the prompt from
+  `order_emails_prompt.txt`.
 
 Then run missing_cards.py as usual (for example `python missing_cards.py
 --profile Earlyflash --json missing.json`) and cards that have arrived drop
