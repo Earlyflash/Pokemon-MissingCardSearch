@@ -112,6 +112,9 @@ include them, and fetching rarity costs one request per card.
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
 | `--no-english-names` | Don't look up English names for non-English cards. |
+| `--ordered FILE` | Cards on order (default `ordered.txt` next to the script, if it exists). Any now in the collection are moved out to `--arrived`; see [Cards on order](#cards-on-order-orderedtxt). |
+| `--arrived FILE` | Where arrived cards go (default `ordered_arrived.txt` next to `--ordered`). |
+| `--keep-ordered` | Leave `ordered.txt` alone this run. |
 
 ## Pricing the missing cards
 
@@ -152,7 +155,7 @@ read the results: open it in a browser for one row per missing card, grouped
 by set, and one column per marketplace. Sets come in set number order (M1L, M1S, M2,
 M2a...); a menu at the top re-sorts them by fewest cards missing or cheapest to
 complete (sets with cards nobody has for sale go last). Cards listed in
-`ordered.txt` (see the wants list section below) are shaded and tagged
+`ordered.txt` (see [Cards on order](#cards-on-order-orderedtxt)) are shaded and tagged
 "ordered", and can be hidden with a tick box, so they aren't bought twice. Cards are named in English where
 missing_cards.py found an English name, with the printed name underneath, and
 the marketplace names stay at the top of the screen as you scroll. Each cell is that marketplace's
@@ -285,13 +288,11 @@ Cardmarket's report of what it added.
 | `--skip-unpriced` | Also leave out cards Cardmarket has no price for (kept by default). |
 | `--currency CODE` | Currency for prices and filters (default `GBP`). |
 
-To avoid doubling up on cards you've already ordered, list them in
-`ordered.txt` (git-ignored), one per line: either a TCGdex card id from the
-CSV (`me01-161`) or a line copied straight from an earlier list
-(`1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)`).
-Lines starting with `#` are notes. Once a card arrives and is in your
-RareCandy collection it drops off the missing list anyway, so it can come
-out of `ordered.txt` then.
+Cards listed in `ordered.txt` are left out, so you don't double up on cards
+you've already ordered (see [Cards on order](#cards-on-order-orderedtxt)). A
+line copied straight from an earlier list
+(`1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)`)
+works there as well as a card id.
 
 Prices come from Cardmarket's public daily price guide (in EUR, converted).
 Expansion names are read off Cardmarket's sealed products ("Abyss Eye
@@ -300,6 +301,75 @@ missing cards file. Versions number same-named cards within an expansion in
 Cardmarket's product order (Mega Evolution's Mega Absol ex #086, #161 and #180
 are V.1, V.2 and V.3). The box has no way to set language or minimum
 condition, so set those on the wants list after pasting.
+
+## Cards on order (ordered.txt)
+
+`ordered.txt` (git-ignored, next to the scripts) lists cards you've bought
+that haven't reached your RareCandy collection yet, so price_search.py shades
+them and wants_list.py leaves them out. One card per line:
+
+```
+# card id | date ordered | shop | order number | the card as the order named it
+me01-161 | 2026-09-28 | Cardmarket | 1234567890 | Mega Absol ex 161/132
+M2a-003 | 2026-09-29 | Japan2UK | #40112 | Mega Venusaur ex 003/193 (M2a)
+1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)
+```
+
+Only the part before the first ` | ` is read: a TCGdex card id (as in the
+missing cards CSV's TCGdex Card ID column) or a Cardmarket wants list line.
+The rest is notes. A card id line is one copy; list it twice for two. Lines
+starting with `#` are comments.
+
+Each time missing_cards.py runs, any card id line whose card is now in the
+collection is moved out of `ordered.txt` onto the end of
+`ordered_arrived.txt`, tagged `| arrived <date>`, and listed in the output.
+It's checked against every set it compared with the collection, including
+ones under `--min-complete`; cards from sets you don't own any of yet stay
+put until the first one arrives. Wants list name lines can't be tied to a
+card, so they're left for you to remove and counted in the output. Pass
+`--keep-ordered` to skip this.
+
+### Filling it in from order emails
+
+A Claude Cowork scheduled task can read order confirmations from your email
+and add their cards to `ordered.txt`. Give the task the folder holding this
+repository, schedule it daily, and use this prompt:
+
+```
+Search my email for order confirmations for Pokémon TCG single cards from the
+last 14 days (Cardmarket, eBay and UK card shops such as CardCargo, Japan2UK,
+Titan Cards, Tyneside TCG, NMD Collectables and Radam's Poké Stop).
+
+For each order, note the shop and the order number. Read ordered.txt and
+ordered_arrived.txt in the Pokemon-MissingCardSearch folder. If either has a
+line containing " | <shop> | <order number> |", that order is already
+recorded: skip it.
+
+For every other order, add one line to the end of ordered.txt per single card
+(one line per copy; skip sealed product, sleeves and other accessories):
+
+<card id> | <order date as YYYY-MM-DD> | <shop> | <order number> | <the card as the email names it>
+
+The card id is the card's TCGdex id. Find it from TCGdex's set listing at
+https://api.tcgdex.net/v2/<lang>/sets/<set id> (lang "en" for English cards,
+"ja" for Japanese): use the "id" of the card whose localId matches the card's
+number in that set, e.g. me01-161 or M2a-003. If you can't pin down the card
+confidently, write the card as the email names it in place of the id, with
+its set and number, so it's still recorded.
+
+If an email cancels or refunds an order already in ordered.txt, put "# cancelled "
+at the start of that order's lines. Otherwise only add lines; never change or
+remove existing ones, and leave ordered_arrived.txt alone.
+
+Finish with a short summary: orders added, cards added, and any card you
+couldn't identify.
+```
+
+Then run missing_cards.py as usual (for example `python missing_cards.py
+--profile Earlyflash --json missing.json`) and cards that have arrived drop
+out of `ordered.txt` by themselves. The order number in each line, kept in
+`ordered_arrived.txt` after the card arrives, is what stops the email task
+adding an order twice.
 
 ## How it works
 

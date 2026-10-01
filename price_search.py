@@ -29,15 +29,15 @@ import re
 import sys
 import time
 import urllib.request
-from collections import Counter
 from decimal import Decimal, ROUND_HALF_UP
 
 import marketplaces
 from marketplaces.base import MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer, SearchContext
+from ordered import read_ordered
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CACHE_DIR = os.path.join(SCRIPT_DIR, ".price_cache")
-# Cards already bought but not yet in the collection (see read_ordered).
+# Cards already bought but not yet in the collection (see ordered.py).
 DEFAULT_ORDERED = os.path.join(SCRIPT_DIR, "ordered.txt")
 # Same free exchange-rate service RareCandyExporter's --currency uses (it has
 # since moved from api.frankfurter.app, which now redirects here).
@@ -129,32 +129,6 @@ def load_missing(path, only_sets=()):
         if cards:
             groups.append((s, cards))
     return groups
-
-
-def read_ordered(path):
-    """Cards already ordered, from a text file with one per line: either a
-    TCGdex card id ("me01-161") or a line copied from an earlier wants list
-    ("1 Mega Absol ex ... (V.2) (Mega Evolution)"; the amount says how many
-    are on order, 1 if left off). Blank lines and lines starting with # are skipped.
-    Returns (set of card ids, Counter of wants list names). A missing file
-    means nothing is on order."""
-    ids, names = set(), Counter()
-    try:
-        with open(path, encoding="utf-8-sig") as f:
-            lines = f.read().splitlines()
-    except FileNotFoundError:
-        return ids, names
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#"):  # whole-line only: "Blaine's Quiz #1" is a card
-            continue
-        m = re.fullmatch(r"(\d+)\s*[xX]?\s+(.+)", line)
-        amount, text = (int(m.group(1)), m.group(2).strip()) if m else (1, line)
-        if not m and re.fullmatch(r"[^\s()]+-[^\s()]+", line):
-            ids.add(line.lower())
-        else:
-            names[text.casefold()] += amount
-    return ids, names
 
 
 # ---------------------------------------------------------------- plugins --

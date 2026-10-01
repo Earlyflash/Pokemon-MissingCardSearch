@@ -36,6 +36,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BINDER_TOOL_DIR = os.path.join(SCRIPT_DIR, "vendor", "pokemon-binder-cover-tool")
 EXPORTER_DIR = os.path.join(SCRIPT_DIR, "vendor", "RareCandyExporter")
 DEFAULT_SET_MAP = os.path.join(SCRIPT_DIR, "set_map.json")
+DEFAULT_ORDERED = os.path.join(SCRIPT_DIR, "ordered.txt")
 
 if not os.path.isfile(os.path.join(BINDER_TOOL_DIR, "binder_cover.py")):
     sys.exit("vendor/pokemon-binder-cover-tool is empty -- run "
@@ -56,6 +57,7 @@ except ImportError:
 import binder_cover  # noqa: E402  (path set up just above)
 from binder_cover import TCGDEX_BASE, TCGDEX_LANGS  # noqa: E402
 from marketplaces.cardmarket import product_id  # noqa: E402
+from ordered import default_arrived_path, prune_arrived  # noqa: E402
 
 # RareCandyExporter writes a full language name per card (detected from the
 # card's scrydex image URL). These are the only TCGdex datasets whose card list
@@ -277,7 +279,7 @@ def find_missing(owned, set_map):
     """Returns (results, unmatched). results is one dict per (set, language)
     group: set_name, language, set_id, tcgdex_lang, total, owned_count,
     missing (list of TCGdex card dicts), unknown_owned (owned numbers TCGdex
-    doesn't list). unmatched is [(set_name, language, reason)]."""
+    doesn't list), card_ids (every card id TCGdex lists for the set). unmatched is [(set_name, language, reason)]."""
     results, unmatched = [], []
     for (set_name, language) in sorted(owned, key=lambda k: (k[0].lower(), k[1])):
         numbers = owned[(set_name, language)]
@@ -308,6 +310,7 @@ def find_missing(owned, set_map):
             "tcgdex_lang": lang_used, "total": len(listed),
             "owned_count": len(numbers) - len(unknown),
             "missing": missing, "unknown_owned": unknown,
+            "card_ids": [c.get("id") for c in listed.values() if c.get("id")],
         })
     return results, unmatched
 
@@ -323,6 +326,25 @@ def apply_threshold(results, min_complete):
     kept = [r for r in results if completion(r) >= min_complete]
     below = [r for r in results if completion(r) < min_complete]
     return kept, below
+
+
+def prune_ordered(results, path, arrived_path=None):
+    """Move cards on order (ordered.txt) that are now in the collection out to
+    the arrived file, judged against every set just checked -- before the
+    --min-complete cut, so a card from a barely started set still counts. A
+    card in two checked collections of one set (an English and a German one,
+    say) only counts as arrived once neither is missing it."""
+    checked = {i.lower() for r in results for i in r.get("card_ids", ())}
+    missing = {c["id"].lower() for r in results for c in r["missing"] if c.get("id")}
+    arrived, names = prune_arrived(path, checked, missing, arrived_path)
+    if arrived:
+        print(f"\n{len(arrived)} ordered card(s) now in the collection, moved from "
+              f"{path} to {arrived_path or default_arrived_path(path)}:")
+        for line in arrived:
+            print(f"  {line}")
+    if names:
+        print(f"\n{names} line(s) in {path} name a card rather than a TCGdex card id, so "
+              "can't be checked against the collection: take them out by hand once they arrive.")
 
 
 def print_report(results, unmatched, below=(), min_complete=0):
@@ -434,6 +456,15 @@ def build_arg_parser():
                         "Cardmarket's ~14 MB product list and one TCGdex request per card).")
     p.add_argument("--json", metavar="FILE",
                    help="Also write the missing cards as JSON, grouped by set.")
+    p.add_argument("--ordered", default=DEFAULT_ORDERED, metavar="FILE",
+                   help="Cards on order (default: ordered.txt next to this script, if it "
+                        "exists). Any that are now in the collection are moved out to "
+                        "--arrived.")
+    p.add_argument("--arrived", metavar="FILE",
+                   help="Where cards that have arrived go from --ordered (default: "
+                        "ordered_arrived.txt next to it).")
+    p.add_argument("--keep-ordered", dest="prune_ordered", action="store_false",
+                   help="Leave --ordered as it is, even for cards now in the collection.")
     return p
 
 
@@ -467,6 +498,8 @@ def main(argv=None):
         set_map.setdefault("cli", {})[name.strip().lower()] = code.strip()
 
     results, unmatched = find_missing(owned, set_map)
+    if args.prune_ordered:
+        prune_ordered(results, args.ordered, args.arrived)
     results, below = apply_threshold(results, args.min_complete)
     if args.english_names:
         add_english_names(results)
