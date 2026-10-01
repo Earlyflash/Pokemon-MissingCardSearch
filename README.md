@@ -206,7 +206,7 @@ nobody has for sale.
 
 Shops start answering "429 Too Many Requests" when they're read often, so
 the quickest daytime search is one that hardly asks them anything. Run the
-search overnight on your PC to refresh the cache (and wake up to a fresh
+search overnight on your machine to refresh the cache (and wake up to a fresh
 `offers.csv` and `price_table.html`), then search during the day with
 `--cache-ttl 24` so it reads last night's pages from disk:
 
@@ -214,22 +214,19 @@ search overnight on your PC to refresh the cache (and wake up to a fresh
 python price_search.py missing_cards.csv --cache-ttl 24
 ```
 
-On Windows, `nightly_search.bat` runs the overnight search and appends its
-output to `nightly_search.log`. Schedule it for 3am every day from a
-Command Prompt (use the folder you cloned into):
-
-```bat
-schtasks /Create /TN "Pokemon price search" /SC DAILY /ST 03:00 /TR "\"C:\path\to\Pokemon-MissingCardSearch\nightly_search.bat\""
-```
-
-The PC has to be on (and you logged in, unless you tick "Run whether user
-is logged on or not" in Task Scheduler). It searches the
-`missing_cards.csv` you last wrote, so re-run `missing_cards.py` when your
-collection changes. On macOS or Linux, the same with cron (`crontab -e`):
+`nightly_search.sh` runs the overnight search and appends its output to
+`nightly_search.log`. Schedule it for 3am every day with cron (`crontab -e`,
+using the folder you cloned into):
 
 ```
-0 3 * * * cd /path/to/Pokemon-MissingCardSearch && python3 price_search.py missing_cards.csv --cache-ttl 0 >> nightly_search.log 2>&1
+0 3 * * * /path/to/Pokemon-MissingCardSearch/nightly_search.sh
 ```
+
+The machine has to be on at 3am; cron doesn't catch up on a missed run
+(`anacron` or a systemd timer with `Persistent=true` does, if you need
+that). It searches the `missing_cards.csv` you last wrote, so re-run
+`missing_cards.py` when your collection changes. If you use a virtualenv,
+change `python3` in the script to that environment's Python.
 
 ### Marketplaces
 
