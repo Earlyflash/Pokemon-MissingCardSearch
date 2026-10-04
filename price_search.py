@@ -32,8 +32,8 @@ import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 
 import marketplaces
-from marketplaces.base import (FINISH_NORMAL, MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer,
-                               SearchContext, finish_key)
+from marketplaces.base import (MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer, SearchContext,
+                               finish_key)
 from data_dir import data_path, ensure_parent
 from ordered import read_ordered
 
@@ -132,20 +132,6 @@ def load_missing(path, only_sets=()):
         if cards:
             groups.append((s, cards))
     return groups
-
-
-def without_reverse_holos(groups):
-    """(groups less their reverse holo prints, how many were left out). Shops
-    don't say which finish a listing is in a way the plugins can read, so a
-    reverse holo would only be priced as its normal print; wants_list.py
-    covers them instead, through each print's own Cardmarket product."""
-    kept, dropped = [], 0
-    for set_entry, cards in groups:
-        normal = [c for c in cards if c.finish in (None, FINISH_NORMAL)]
-        dropped += len(cards) - len(normal)
-        if normal:
-            kept.append((set_entry, normal))
-    return kept, dropped
 
 
 # ---------------------------------------------------------------- plugins --
@@ -745,10 +731,7 @@ def main(argv=None):
         sys.exit("Give missing_cards.csv, or the file written by `missing_cards.py --json FILE`.")
 
     currency = args.currency.upper()
-    groups, reverses = without_reverse_holos(load_missing(args.missing_json, args.sets))
-    if reverses:
-        print(f"Leaving out {reverses} missing reverse holo print(s): shops can't be searched "
-              "by finish, so use wants_list.py for those.")
+    groups = load_missing(args.missing_json, args.sets)
     if not groups:
         sys.exit("No missing cards to search for in that file.")
     if args.html_only:

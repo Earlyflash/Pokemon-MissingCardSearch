@@ -217,6 +217,15 @@ class TestMain(unittest.TestCase):
         self.assertEqual([r["Finish"] for r in rows], ["normal", "energy", "ball"])
         self.assertTrue(rows[2]["Cardmarket Link"].endswith("idProduct=8"))
 
+    def test_additionals_only(self):
+        lines, rows, _ = self.run_main("--additionals-only", missing=MISSING_PRINTS)
+        self.assertEqual(lines, ["1 Psyduck Damp Ram (V.1) (MEGA Dream ex: Additionals)",
+                                 "1 Psyduck Damp Ram (V.2) (MEGA Dream ex: Additionals)"])
+        self.assertEqual([r["Finish"] for r in rows], ["energy", "ball"])
+        with self.assertRaises(SystemExit) as e:
+            self.run_main("--additionals-only")
+        self.assertIn("No missing reverse holo prints", str(e.exception))
+
     def test_ordering_one_print_leaves_the_others(self):
         with tempfile.TemporaryDirectory() as d:
             ordered = os.path.join(d, "ordered.txt")

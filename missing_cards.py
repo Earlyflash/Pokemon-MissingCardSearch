@@ -79,7 +79,8 @@ LANGUAGE_TO_TCGDEX = {
 }
 
 OUT_COLUMNS = ["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name", "TCGdex Card ID",
-               "English Name", "Finish"]
+               "English Name"]
+PRINTS_NAME = "missing_prints.csv"
 
 # Cardmarket's public product list names every product in English, Japanese
 # prints included, and TCGdex's card records carry the Cardmarket product id.
@@ -268,7 +269,7 @@ def add_english_names(results):
     list once). Cards it can't resolve are left with name_en None."""
     todo, prints = [], {}
     for r in results:
-        for c in r["missing"]:
+        for c in [*r["missing"], *r.get("prints", ())]:
             if r["tcgdex_lang"] == "en":
                 c["name_en"] = c.get("name")
             else:
@@ -349,14 +350,16 @@ def missing_prints(listed, finishes, prints):
 def find_missing(owned, set_map, finishes=None):
     """Returns (results, unmatched). results is one dict per (set, language)
     group: set_name, language, set_id, tcgdex_lang, total, owned_count,
-    missing (list of TCGdex card dicts), unknown_owned (owned numbers TCGdex
-    doesn't list), card_keys (ordered.card_key of every card, and of every
-    print checked, that TCGdex lists for the set). unmatched is [(set_name,
-    language, reason)].
+    missing (list of TCGdex card dicts: cards with no copy owned), prints
+    (the same, but print by print where that was checked; see below),
+    unknown_owned (owned numbers TCGdex doesn't list), card_keys
+    (ordered.card_key of every card, and of every print checked, that TCGdex
+    lists for the set). unmatched is [(set_name, language, reason)].
 
-    For groups in `finishes` (see read_owned), every print of a card with
-    reverse holos counts separately: missing then also has each print not
-    owned, its "finish" set. Completion still counts cards, any print."""
+    For groups in `finishes` (see read_owned), prints counts every print of
+    a card with reverse holos separately: each one not owned, its "finish"
+    set. That's for the wants list only: missing, completion and the store
+    search still go by card, any print."""
     finishes = finishes or {}
     results, unmatched = [], []
     for (set_name, language) in sorted(owned, key=lambda k: (k[0].lower(), k[1])):
@@ -380,31 +383,33 @@ def find_missing(owned, set_map, finishes=None):
             continue
 
         listed = {normalize_number(c.get("localId")): c for c in cards}
-        missing = [c for n, c in listed.items() if n not in numbers]
+        missing = sorted((c for n, c in listed.items() if n not in numbers),
+                         key=lambda c: _sort_key(normalize_number(c.get("localId"))))
+        by_print = missing
         keys = [card_key(c.get("id")) for c in listed.values() if c.get("id")]
         if (set_name, language) in finishes:
-            print(f"[set] Checking every print of {len(listed)} card(s): the export says "
-                  "which finish each copy is...")
+            print(f"[set] Checking every print of {len(listed)} card(s) for the wants list: "
+                  "the export says which finish each copy is...")
             prints = card_prints(listed.values(), lang_used)
             # Missing cards with reverse holos come back as every print.
-            missing = [c for c in missing if c.get("id") not in prints]
             found, no_finish = missing_prints(
                 listed, {**{n: set() for n in listed if n not in numbers},
                          **finishes[(set_name, language)]}, prints)
-            missing += found
+            order = {key: i for i, key in enumerate((None, *FINISHES))}
+            by_print = sorted([c for c in missing if c.get("id") not in prints] + found,
+                              key=lambda c: (_sort_key(normalize_number(c.get("localId"))),
+                                             order.get(c.get("finish"), 0)))
             keys += [card_key(i, key) for i, variants in prints.items() for key, _, _ in variants]
             if no_finish:
                 print(f"[set] {len(no_finish)} card(s) owned with no finish in the export, "
                       f"counted as normal: {', '.join(sorted(no_finish, key=_sort_key))}")
-        order = {key: i for i, key in enumerate((None, *FINISHES))}
-        missing.sort(key=lambda c: (_sort_key(normalize_number(c.get("localId"))),
-                                    order.get(c.get("finish"), 0)))
         unknown = sorted((n for n in numbers if n not in listed), key=_sort_key)
         results.append({
             "set_name": set_name, "language": language, "set_id": set_id,
             "tcgdex_lang": lang_used, "total": len(listed),
             "owned_count": len(numbers) - len(unknown),
-            "missing": missing, "unknown_owned": unknown, "card_keys": keys,
+            "missing": missing, "prints": by_print, "unknown_owned": unknown,
+            "card_keys": keys,
         })
     return results, unmatched
 
@@ -429,8 +434,8 @@ def prune_ordered(results, path, arrived_path=None):
     card in two checked collections of one set (an English and a German one,
     say) only counts as arrived once neither is missing it."""
     checked = {key for r in results for key in r.get("card_keys", ())}
-    missing = {card_key(c["id"], c.get("finish")) for r in results for c in r["missing"]
-               if c.get("id")}
+    missing = {card_key(c["id"], c.get("finish")) for r in results
+               for c in r.get("prints", r["missing"]) if c.get("id")}
     arrived, names = prune_arrived(path, checked, missing, arrived_path)
     if arrived:
         print(f"\n{len(arrived)} ordered card(s) now in the collection, moved from "
@@ -451,8 +456,7 @@ def print_report(results, unmatched, below=(), min_complete=0):
         for c in r["missing"]:
             name, name_en = c.get("name", ""), c.get("name_en")
             shown = f"{name} ({name_en})" if name_en and name_en != name else name
-            finish = f"  [{c['finish_name']}]" if c.get("finish_name") else ""
-            print(f"  #{c.get('localId', '?'):<8} {shown}{finish}")
+            print(f"  #{c.get('localId', '?'):<8} {shown}")
         if r["unknown_owned"]:
             print(f"  (owned but not in TCGdex's list: {', '.join(r['unknown_owned'])} -- "
                   "numbering mismatch or wrong set match)")
@@ -465,9 +469,12 @@ def print_report(results, unmatched, below=(), min_complete=0):
         for set_name, language, reason in unmatched:
             print(f"  {set_name} ({language}): {reason}")
     total_missing = sum(len(r["missing"]) for r in results)
-    print(f"\n{total_missing} missing card(s) across {len(results)} set(s)"
-          + (", counting each missing print of cards with reverse holos."
-             if any(c.get("finish") for r in results for c in r["missing"]) else "."))
+    print(f"\n{total_missing} missing card(s) across {len(results)} set(s).")
+    for r in results:
+        extra = sum(1 for c in r.get("prints", ()) if c.get("finish"))
+        if extra:
+            print(f"{r['set_name']}: {extra} print(s) of cards with reverse holos missing "
+                  "for the wants list (missing_prints.csv).")
 
 
 def write_csv(results, path):
@@ -480,16 +487,28 @@ def write_csv(results, path):
             for c in r["missing"]:
                 w.writerow([r["set_name"], r["set_id"], r["language"],
                             c.get("localId", ""), c.get("name", ""), c.get("id", ""),
+                            c.get("name_en") or ""])
+
+
+def write_prints_csv(results, path):
+    """missing_cards.csv's rows print by print, for wants_list.py: the same
+    columns plus Finish, with each print not owned of cards whose finishes
+    were checked (see find_missing) and the plain missing cards of every
+    other set."""
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow([*OUT_COLUMNS, "Finish"])
+        for r in results:
+            for c in r.get("prints", r["missing"]):
+                w.writerow([r["set_name"], r["set_id"], r["language"],
+                            c.get("localId", ""), c.get("name", ""), c.get("id", ""),
                             c.get("name_en") or "", c.get("finish_name") or ""])
 
 
 def write_json(results, unmatched, path, below=(), min_complete=0):
     """Machine-readable version of the report, grouped by set, for downstream
-    tools (e.g. marketplace search). Rarity isn't known here -- TCGdex's bulk
-    set listing doesn't carry it -- so it's always null. Finish is null too,
-    except in sets checked print by print (see find_missing), where it's
-    "normal", "energy" or "ball" and finish_name says which ("Love Ball
-    Reverse Holo")."""
+    tools (e.g. marketplace search). Rarity and finish aren't known here --
+    TCGdex's bulk set listing doesn't carry them -- so they're always null."""
     sets = []
     for r in results:
         sets.append({
@@ -510,8 +529,7 @@ def write_json(results, unmatched, path, below=(), min_complete=0):
                 "language": r["language"],
                 "tcgdex_lang": r["tcgdex_lang"],
                 "rarity": None,
-                "finish": c.get("finish"),
-                "finish_name": c.get("finish_name"),
+                "finish": None,
             } for c in r["missing"]],
         })
     data = {
@@ -557,6 +575,10 @@ def build_arg_parser():
                         "(default: %(default)g). 0 lists every set you own a card from.")
     p.add_argument("--out", default=data_path("missing_cards.csv"),
                    help="CSV to write the missing cards to (default: %(default)s).")
+    p.add_argument("--prints-out", metavar="FILE",
+                   help="CSV of the missing cards print by print, for wants_list.py: MEGA Dream "
+                        "ex's reverse holos as their own rows when the export says each copy's "
+                        "finish (default: missing_prints.csv next to --out).")
     p.add_argument("--no-english-names", dest="english_names", action="store_false",
                    help="Skip looking up English names for non-English cards (saves "
                         "Cardmarket's ~14 MB product list and one TCGdex request per card).")
@@ -614,6 +636,12 @@ def main(argv=None):
     ensure_parent(args.out)
     write_csv(results, args.out)
     print(f"Wrote {sum(len(r['missing']) for r in results)} row(s) to {os.path.abspath(args.out)}")
+    prints_out = args.prints_out or os.path.join(os.path.dirname(os.path.abspath(args.out)),
+                                                 PRINTS_NAME)
+    ensure_parent(prints_out)
+    write_prints_csv(results, prints_out)
+    print(f"Wrote {sum(len(r.get('prints', r['missing'])) for r in results)} row(s) to "
+          f"{os.path.abspath(prints_out)} for the wants list")
     if args.json:
         ensure_parent(args.json)
         write_json(results, unmatched, args.json, below, args.min_complete)

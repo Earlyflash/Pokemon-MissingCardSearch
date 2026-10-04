@@ -2,8 +2,9 @@
 """
 Cardmarket Wants List Export
 ----------------------------
-Turns the missing cards written by missing_cards.py (its missing_cards.csv,
-or the file from its --json flag) into a text list for Cardmarket's
+Turns the missing cards written by missing_cards.py (its missing_prints.csv,
+which lists MEGA Dream ex's reverse holos print by print, its
+missing_cards.csv, or the file from its --json flag) into a text list for Cardmarket's
 "Add Deck List" box on a wants list, so every missing card can be added to
 one wants list in a single paste.
 
@@ -65,6 +66,8 @@ NONSINGLES_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productLis
 # V.2, in idProduct order like every other version.
 UNBOXED_EXPANSIONS = {6409: "MEGA Dream ex: Additionals"}
 PENNY = Decimal("0.01")
+# missing_cards.py's print-by-print list, written next to missing_cards.csv.
+DEFAULT_MISSING_PRINTS = data_path("missing_prints.csv")
 PRICE_FIELDS = ("trend", "low", "avg", "avg7", "avg30")
 
 
@@ -193,6 +196,18 @@ def build_rows(groups, pids, products, nonsingles, guide, field, rate):
     return rows
 
 
+def reverse_holos_only(groups):
+    """groups (from load_missing) cut down to reverse holo prints -- the
+    cards Cardmarket keeps in MEGA Dream ex: Additionals -- dropping sets
+    left with none."""
+    kept = []
+    for set_entry, cards in groups:
+        reverses = [c for c in cards if c.finish not in (None, FINISH_NORMAL)]
+        if reverses:
+            kept.append((set_entry, reverses))
+    return kept
+
+
 def keep(row, min_price=None, max_price=None, skip_unpriced=False):
     """Whether a card passes the price filters. A card with no price is kept
     unless skip_unpriced, since its price isn't known to be out of range."""
@@ -256,9 +271,12 @@ def build_arg_parser():
     p = argparse.ArgumentParser(
         description="Write missing cards as a list to paste into Cardmarket's wants list "
                     "\"Add Deck List\" box.")
-    p.add_argument("missing_file", nargs="?", default=DEFAULT_MISSING, metavar="MISSING_FILE",
-                   help="missing_cards.csv, or the JSON written by missing_cards.py --json "
-                        "(default: missing_cards.csv in ~/PokemonData).")
+    p.add_argument("missing_file", nargs="?", default=DEFAULT_MISSING_PRINTS,
+                   metavar="MISSING_FILE",
+                   help="missing_prints.csv (each missing print, MEGA Dream ex reverse holos "
+                        "included), missing_cards.csv, or the JSON written by missing_cards.py "
+                        "--json (default: missing_prints.csv in ~/PokemonData, or "
+                        "missing_cards.csv if there's none).")
     p.add_argument("--out", default=data_path("cardmarket_wants.txt"),
                    help="Text file to write the list to (default: %(default)s).")
     p.add_argument("--csv-out", metavar="FILE",
@@ -266,6 +284,9 @@ def build_arg_parser():
                         "(default: next to --out, with .csv in place of .txt).")
     p.add_argument("--set", dest="sets", action="append", default=[], metavar="NAME",
                    help="Only include this set, by name or TCGdex set id (repeatable).")
+    p.add_argument("--additionals-only", action="store_true",
+                   help="Only list reverse holo prints (MEGA Dream ex: Additionals), from "
+                        "missing_prints.csv.")
     p.add_argument("--max-price", type=Decimal, metavar="AMOUNT",
                    help="Leave out cards priced above this, in --currency (e.g. 20).")
     p.add_argument("--min-price", type=Decimal, metavar="AMOUNT",
@@ -293,8 +314,16 @@ def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     args = build_arg_parser().parse_args(argv)
+    if args.missing_file == DEFAULT_MISSING_PRINTS and not os.path.isfile(args.missing_file):
+        args.missing_file = DEFAULT_MISSING
     currency = args.currency.upper()
     groups = load_missing(args.missing_file, args.sets)
+    if args.additionals_only:
+        groups = reverse_holos_only(groups)
+        if not groups:
+            sys.exit(f"No missing reverse holo prints in {args.missing_file}: they're listed in "
+                     "missing_prints.csv when the RareCandy export says each MEGA Dream ex "
+                     "card's finish (see missing_cards.py --headful).")
     if not groups:
         sys.exit("No missing cards in that file.")
     cards = [c for _, cards in groups for c in cards]
