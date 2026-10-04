@@ -32,7 +32,8 @@ import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 
 import marketplaces
-from marketplaces.base import MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer, SearchContext
+from marketplaces.base import (MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer, SearchContext,
+                               finish_key)
 from data_dir import data_path, ensure_parent
 from ordered import read_ordered
 
@@ -102,6 +103,7 @@ def read_missing_csv(f):
             "local_id": row["Card Number"], "name": row["Card Name"],
             "language": language, "tcgdex_lang": entry["tcgdex_lang"],
             "name_en": row.get("English Name") or None,
+            "finish": finish_key(row.get("Finish")),
         })
     return {"sets": list(sets.values())}
 

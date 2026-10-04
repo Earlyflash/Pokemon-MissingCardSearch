@@ -19,7 +19,8 @@ import urllib.error
 import urllib.parse
 from decimal import Decimal
 
-from marketplaces.base import MATCH_EXACT, Marketplace, Offer
+from marketplaces.base import (FINISH_BALL, FINISH_ENERGY, FINISH_NORMAL, MATCH_EXACT,
+                               Marketplace, Offer)
 
 PRICE_GUIDE_URL = "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_6.json"
 TCGDEX_CARD_URL = "https://api.tcgdex.net/v2/{lang}/cards/{card_id}"
@@ -34,6 +35,43 @@ PRODUCT_URL = "https://www.cardmarket.com/en/Pokemon/Products?idProduct={id}"
 def product_id(tcgdex_card):
     cm = ((tcgdex_card or {}).get("pricing") or {}).get("cardmarket") or {}
     return cm.get("idProduct")
+
+
+def _foil_name(foil):
+    """TCGdex's reverse holo pattern as a name: "loveball" -> "Love Ball",
+    "team-rocket" -> "Team Rocket"; None (not recorded) -> "Ball"."""
+    if not foil:
+        return "Ball"
+    if foil == "pokeball":
+        return "Poké Ball"
+    if foil.endswith("ball"):
+        foil = foil[:-4] + " ball"
+    return foil.replace("-", " ").title()
+
+
+def card_variants(tcgdex_card):
+    """[(finish key, finish name, Cardmarket idProduct or None), ...] for
+    each print of a TCGdex card with reverse holos -- the normal print, then
+    the reverses -- read off its `variants_detailed`, where every print has
+    its own Cardmarket product (M2a's reverses are in Cardmarket's separate
+    "MEGA Dream ex: Additionals" expansion). [] for a card with only one
+    print, or whose reverses can't be told apart."""
+    detailed = (tcgdex_card or {}).get("variants_detailed") or []
+    reverses = [v for v in detailed if v.get("type") == "reverse"]
+    if not reverses:
+        return []
+
+    def cm_id(v):
+        return ((v or {}).get("thirdParty") or {}).get("cardmarket")
+    normal = next((v for v in detailed if v.get("type") == "normal"), None)
+    found = [(FINISH_NORMAL, "Normal", cm_id(normal) or product_id(tcgdex_card))]
+    for v in reverses:
+        if v.get("foil") == "energy":
+            found.append((FINISH_ENERGY, "Energy Reverse Holo", cm_id(v)))
+        else:
+            found.append((FINISH_BALL, f"{_foil_name(v.get('foil'))} Reverse Holo", cm_id(v)))
+    keys = [key for key, _, _ in found]
+    return found if len(keys) == len(set(keys)) else []
 
 
 def money(value):

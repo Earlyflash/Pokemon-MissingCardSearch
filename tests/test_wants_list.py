@@ -44,6 +44,22 @@ PRODUCTS = {"products": [
     {"idProduct": 3, "name": "Charizard ex [Infernal Reign | Burning Darkness]", "idExpansion": 10},
     {"idProduct": 4, "name": "Charizard ex [Infernal Reign | Burning Darkness]", "idExpansion": 10},
     {"idProduct": 5, "name": "Pikachu [Thunder Jolt]", "idExpansion": 20},
+    {"idProduct": 6, "name": "Psyduck [Damp | Ram]", "idExpansion": 20},
+    {"idProduct": 8, "name": "Psyduck [Damp | Ram]", "idExpansion": 6409},
+    {"idProduct": 7, "name": "Psyduck [Damp | Ram]", "idExpansion": 6409},
+]}
+# M2a-032 Psyduck: a normal print and two reverse holos, each its own product.
+PSYDUCK = {"id": "M2a-032", "pricing": {"cardmarket": {"idProduct": 6}}, "variants_detailed": [
+    {"type": "normal", "thirdParty": {"cardmarket": 6}},
+    {"type": "reverse", "foil": "energy", "thirdParty": {"cardmarket": 7}},
+    {"type": "reverse", "foil": "loveball", "thirdParty": {"cardmarket": 8}},
+]}
+MISSING_PRINTS = {"sets": [
+    {"set_id": "M2a", "set_name": "MEGA Dream ex", "language": "Japanese", "tcgdex_lang": "ja",
+     "missing": [
+         {"card_id": "M2a-032", "set_id": "M2a", "set_name": "MEGA Dream ex", "local_id": "032",
+          "name": "コダック", "name_en": "Psyduck", "language": "Japanese", "tcgdex_lang": "ja",
+          "finish": finish} for finish in ("normal", "energy", "ball")]},
 ]}
 NONSINGLES = {"products": [
     {"idProduct": 90, "name": "Destined Rivals Booster", "idExpansion": 10},
@@ -68,6 +84,8 @@ def fake_fetch(self, url, headers=None, as_json=False, timeout=30, max_age=None)
     if url == cardmarket.PRICE_GUIDE_URL:
         return GUIDE
     card_id = url.rsplit("/", 1)[1]
+    if card_id == "M2a-032":
+        return PSYDUCK
     if card_id in TCGDEX:
         return {"id": card_id, "pricing": {"cardmarket": {"idProduct": TCGDEX[card_id]}}}
     return {"id": card_id, "pricing": None}
@@ -89,7 +107,7 @@ class TestHelpers(unittest.TestCase):
             {"name": "Abyss Eye Booster Box Case", "idExpansion": 2},
             {"name": "Abyss Eye Booster Box", "idExpansion": 2},
             {"name": "Lillie's Support Gift Box", "idExpansion": 3},
-        ]), {1: "Mega Evolution", 2: "Abyss Eye"})
+        ]), {1: "Mega Evolution", 2: "Abyss Eye", 6409: "MEGA Dream ex: Additionals"})
 
     def test_versions_in_product_order(self):
         products = [{"idProduct": 851251, "name": "Mega Absol ex", "idExpansion": 6209},
@@ -112,6 +130,9 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(wants_list.card_price({"trend": None, "low": 2}, "trend", rate), Decimal("1.70"))
         self.assertIsNone(wants_list.card_price({}, "trend", rate))
         self.assertIsNone(wants_list.card_price({"trend": 1}, "trend", None))
+        reverse = {"trend": 0, "low": 3, "trend-holo": 4, "low-holo": 3}
+        self.assertEqual(wants_list.card_price(reverse, "trend", rate, reverse=True), Decimal("3.40"))
+        self.assertEqual(wants_list.card_price(reverse, "avg", rate, reverse=True), Decimal("2.55"))
 
     def test_keep(self):
         row = {"price": Decimal("25")}
@@ -140,11 +161,11 @@ class TestHelpers(unittest.TestCase):
 @patch.object(wants_list.SearchContext, "fetch", fake_fetch)
 @patch.object(wants_list, "exchange_rates", lambda cur, target: {"EUR": Decimal("0.5"), target: 1})
 class TestMain(unittest.TestCase):
-    def run_main(self, *args):
+    def run_main(self, *args, missing=MISSING):
         with tempfile.TemporaryDirectory() as d:
             src = os.path.join(d, "missing.json")
             with open(src, "w", encoding="utf-8") as f:
-                json.dump(MISSING, f)
+                json.dump(missing, f)
             out = os.path.join(d, "wants.txt")
             with redirect_stdout(io.StringIO()) as log:
                 wants_list.main([src, "--out", out, "--no-cache",
@@ -187,6 +208,31 @@ class TestMain(unittest.TestCase):
         self.assertEqual(sorted(r["TCGdex Card ID"] for r in rows if r["In List"] == "already ordered"),
                          ["M2a-001", "sv10-001"])
         self.assertIn("2 left out as already ordered", log)
+
+    def test_each_print_gets_its_own_product(self):
+        lines, rows, _ = self.run_main(missing=MISSING_PRINTS)
+        self.assertEqual(lines, ["1 Psyduck Damp Ram (MEGA Dream ex)",
+                                 "1 Psyduck Damp Ram (V.1) (MEGA Dream ex: Additionals)",
+                                 "1 Psyduck Damp Ram (V.2) (MEGA Dream ex: Additionals)"])
+        self.assertEqual([r["Finish"] for r in rows], ["normal", "energy", "ball"])
+        self.assertTrue(rows[2]["Cardmarket Link"].endswith("idProduct=8"))
+
+    def test_additionals_only(self):
+        lines, rows, _ = self.run_main("--additionals-only", missing=MISSING_PRINTS)
+        self.assertEqual(lines, ["1 Psyduck Damp Ram (V.1) (MEGA Dream ex: Additionals)",
+                                 "1 Psyduck Damp Ram (V.2) (MEGA Dream ex: Additionals)"])
+        self.assertEqual([r["Finish"] for r in rows], ["energy", "ball"])
+        with self.assertRaises(SystemExit) as e:
+            self.run_main("--additionals-only")
+        self.assertIn("No missing reverse holo prints", str(e.exception))
+
+    def test_ordering_one_print_leaves_the_others(self):
+        with tempfile.TemporaryDirectory() as d:
+            ordered = os.path.join(d, "ordered.txt")
+            with open(ordered, "w", encoding="utf-8") as f:
+                f.write("M2a-032 energy | 2026-10-01 | Cardmarket\nM2a-032\n")
+            lines, _, _ = self.run_main("--ordered", ordered, missing=MISSING_PRINTS)
+        self.assertEqual(lines, ["1 Psyduck Damp Ram (V.2) (MEGA Dream ex: Additionals)"])
 
     def test_set_filter(self):
         lines, _, _ = self.run_main("--set", "M2a")

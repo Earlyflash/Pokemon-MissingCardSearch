@@ -148,6 +148,16 @@ class LoadMissingCsvTests(unittest.TestCase):
         cards = price_search.load_missing(path)[0][1]
         self.assertEqual([c.name_en for c in cards], ["Ivysaur", None])
 
+    def test_finish_column_is_read(self):
+        path = self.write_csv(
+            "Set Name,TCGdex Set,Language,Card Number,Card Name,TCGdex Card ID,English Name,Finish\r\n"
+            "MEGA Dream ex,M2a,Japanese,032,コダック,M2a-032,Psyduck,Normal\r\n"
+            "MEGA Dream ex,M2a,Japanese,032,コダック,M2a-032,Psyduck,Energy Reverse Holo\r\n"
+            "MEGA Dream ex,M2a,Japanese,033,コダック,M2a-033,Golduck,Love Ball Reverse Holo\r\n"
+            "MEGA Dream ex,M2a,Japanese,034,X,M2a-034,X,\r\n")
+        cards = price_search.load_missing(path)[0][1]
+        self.assertEqual([c.finish for c in cards], ["normal", "energy", "ball", None])
+
     def test_other_csv_gives_a_clear_error(self):
         path = self.write_csv("Product Name,Set Name\r\nPikachu,Base Set\r\n")
         with self.assertRaises(SystemExit) as e:

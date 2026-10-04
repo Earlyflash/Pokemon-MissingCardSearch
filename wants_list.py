@@ -2,8 +2,9 @@
 """
 Cardmarket Wants List Export
 ----------------------------
-Turns the missing cards written by missing_cards.py (its missing_cards.csv,
-or the file from its --json flag) into a text list for Cardmarket's
+Turns the missing cards written by missing_cards.py (its missing_prints.csv,
+which lists MEGA Dream ex's reverse holos print by print, its
+missing_cards.csv, or the file from its --json flag) into a text list for Cardmarket's
 "Add Deck List" box on a wants list, so every missing card can be added to
 one wants list in a single paste.
 
@@ -43,9 +44,11 @@ from collections import Counter
 from decimal import Decimal, ROUND_HALF_UP
 
 from marketplaces.base import SearchContext
+from marketplaces.base import FINISH_NORMAL
 from marketplaces.cardmarket import (PLUGIN as CARDMARKET, PRODUCT_URL, TCGDEX_CARD_URL,
-                                     TCGDEX_MAX_AGE, product_id)
+                                     TCGDEX_MAX_AGE, card_variants, product_id)
 from data_dir import data_path, ensure_parent
+from ordered import card_key
 from price_search import (DEFAULT_CACHE_DIR, DEFAULT_MISSING, DEFAULT_ORDERED, exchange_rates, load_missing,
                           read_ordered)
 
@@ -55,7 +58,16 @@ PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/
 # names Cardmarket's expansions, via products like "Abyss Eye Booster".
 NONSINGLES_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
                   "products_nonsingles_6.json")
+# Expansions with no sealed product to name them, by idExpansion. MEGA Dream
+# ex's reverse holos are their own Cardmarket expansion, named as on its page
+# (cardmarket.com/en/Pokemon/Products/Singles/MEGA-Dream-ex-Additionals),
+# colon included -- without it the deck list box drops the expansion:
+# the Energy reverse of each card is V.1 and the Ball (or Team Rocket) one
+# V.2, in idProduct order like every other version.
+UNBOXED_EXPANSIONS = {6409: "MEGA Dream ex: Additionals"}
 PENNY = Decimal("0.01")
+# missing_cards.py's print-by-print list, written next to missing_cards.csv.
+DEFAULT_MISSING_PRINTS = data_path("missing_prints.csv")
 PRICE_FIELDS = ("trend", "low", "avg", "avg7", "avg30")
 
 
@@ -71,7 +83,8 @@ def expansion_names(nonsingles):
     products: "Abyss Eye Booster" -> "Abyss Eye". The shortest such name
     wins, so "Mega Evolution Enhanced Booster" doesn't shadow "Mega Evolution
     Booster"; "X Booster Box" is used when a set has no plain booster.
-    Expansions with neither are left out."""
+    Expansions with neither are left out, except those in
+    UNBOXED_EXPANSIONS."""
     plain, boxes = {}, {}
     for p in nonsingles:
         exp, name = p.get("idExpansion"), p.get("name") or ""
@@ -79,7 +92,7 @@ def expansion_names(nonsingles):
             m = re.fullmatch(pattern, name)
             if m and exp is not None and len(m.group(1)) < len(found.get(exp, m.group(1) + "?")):
                 found[exp] = m.group(1)
-    return {**boxes, **plain}
+    return {**UNBOXED_EXPANSIONS, **boxes, **plain}
 
 
 def versions(products):
@@ -108,33 +121,51 @@ def deck_list_line_name(product, version=None, expansion=None):
     return " ".join(parts)
 
 
-def card_price(row, field, rate):
+def card_price(row, field, rate, reverse=False):
     """The card's price-guide `field` converted with `rate`, or None. Falls
     back to `low` when a product has no `field` price (new cards often have
-    no trend yet)."""
+    no trend yet). A reverse holo print's prices are in the guide's "-holo"
+    figures ("trend-holo"): its plain ones are blank or 0."""
     row = row or {}
-    value = row.get(field)
+    suffix = "-holo" if reverse else ""
+    value = row.get(field + suffix)
     if value in (None, ""):
-        value = row.get("low")
+        value = row.get("low" + suffix)
     if value in (None, "") or rate is None:
         return None
     return (Decimal(str(value)) * rate).quantize(PENNY, ROUND_HALF_UP)
 
 
+def print_product_id(tcgdex_card, finish=None):
+    """The Cardmarket product of one print of a TCGdex card: the card's own
+    product, or with a finish (from missing_cards.py's print-by-print sets)
+    that print's, e.g. its Energy reverse holo in MEGA Dream ex:
+    Additionals."""
+    if finish is None:
+        return product_id(tcgdex_card)
+    found = {key: pid for key, _, pid in card_variants(tcgdex_card)}
+    if not found and finish == FINISH_NORMAL:
+        return product_id(tcgdex_card)
+    return found.get(finish)
+
+
 def lookup_products(cards, ctx, workers=8):
-    """{card_id: idProduct or None} for every card, via TCGdex (cached)."""
+    """{(card_id, finish): idProduct or None} for every card, via TCGdex
+    (cached)."""
     def one(c):
         url = TCGDEX_CARD_URL.format(lang=urllib.parse.quote(c.tcgdex_lang or "en"),
                                      card_id=urllib.parse.quote(c.card_id))
+        key = (c.card_id, c.finish)
         try:
-            return c.card_id, product_id(ctx.fetch(url, as_json=True, max_age=TCGDEX_MAX_AGE))
+            return key, print_product_id(ctx.fetch(url, as_json=True, max_age=TCGDEX_MAX_AGE),
+                                         c.finish)
         except urllib.error.HTTPError as e:
             if e.code != 404:
                 ctx.log(f"{c.card_id}: TCGdex lookup failed ({e})")
-            return c.card_id, None
+            return key, None
         except Exception as e:  # noqa: BLE001 -- one bad card mustn't stop the list
             ctx.log(f"{c.card_id}: TCGdex lookup failed ({e})")
-            return c.card_id, None
+            return key, None
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         return dict(pool.map(one, cards))
 
@@ -149,17 +180,32 @@ def build_rows(groups, pids, products, nonsingles, guide, field, rate):
     rows = []
     for set_entry, cards in groups:
         for c in cards:
-            pid = pids.get(c.card_id)
+            pid = pids.get((c.card_id, c.finish))
             product = by_id.get(pid)
             expansion = product and (expansions.get(product.get("idExpansion"))
                                      or set_entry["set_name"])
             rows.append({
                 "set_name": set_entry["set_name"], "set_id": c.set_id, "language": c.language,
                 "local_id": c.local_id, "name": c.name_en or c.name, "card_id": c.card_id,
+                "finish": c.finish,
                 "id_product": pid, "line_name": deck_list_line_name(product, numbered.get(pid), expansion),
-                "price": card_price(guide.get(pid), field, rate) if pid else None,
+                "price": (card_price(guide.get(pid), field, rate,
+                                     reverse=c.finish not in (None, FINISH_NORMAL))
+                          if pid else None),
             })
     return rows
+
+
+def reverse_holos_only(groups):
+    """groups (from load_missing) cut down to reverse holo prints -- the
+    cards Cardmarket keeps in MEGA Dream ex: Additionals -- dropping sets
+    left with none."""
+    kept = []
+    for set_entry, cards in groups:
+        reverses = [c for c in cards if c.finish not in (None, FINISH_NORMAL)]
+        if reverses:
+            kept.append((set_entry, reverses))
+    return kept
 
 
 def keep(row, min_price=None, max_price=None, skip_unpriced=False):
@@ -177,14 +223,15 @@ def keep(row, min_price=None, max_price=None, skip_unpriced=False):
 
 def mark_ordered(rows, ordered):
     """Set status "already ordered" on rows covered by `ordered` (from
-    read_ordered): every row with a listed card id, and for wants list
-    names, as many rows with that line as the amount on order."""
+    read_ordered): every row with a listed card key (the card id, plus the
+    finish for a reverse holo), and for wants list names, as many rows with
+    that line as the amount on order."""
     ids, names = ordered[0], Counter(ordered[1])
     for r in rows:
         if r["status"] != "yes":
             continue
         key = (r["line_name"] or "").casefold()
-        if r["card_id"].lower() in ids:
+        if card_key(r["card_id"], r.get("finish")) in ids:
             r["status"] = "already ordered"
         elif names[key] > 0:
             names[key] -= 1
@@ -210,12 +257,12 @@ def write_csv(rows, currency, path):
     checking the paste against Cardmarket's report of what it added."""
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name",
+        w.writerow(["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name", "Finish",
                     "TCGdex Card ID", "Deck List Line", f"Price ({currency})", "In List",
                     "Cardmarket Link"])
         for r in rows:
             w.writerow([r["set_name"], r["set_id"], r["language"], r["local_id"], r["name"],
-                        r["card_id"], r["line_name"] or "",
+                        r.get("finish") or "", r["card_id"], r["line_name"] or "",
                         "" if r["price"] is None else f"{r['price']:.2f}", r["status"],
                         PRODUCT_URL.format(id=r["id_product"]) if r["id_product"] else ""])
 
@@ -224,9 +271,12 @@ def build_arg_parser():
     p = argparse.ArgumentParser(
         description="Write missing cards as a list to paste into Cardmarket's wants list "
                     "\"Add Deck List\" box.")
-    p.add_argument("missing_file", nargs="?", default=DEFAULT_MISSING, metavar="MISSING_FILE",
-                   help="missing_cards.csv, or the JSON written by missing_cards.py --json "
-                        "(default: missing_cards.csv in ~/PokemonData).")
+    p.add_argument("missing_file", nargs="?", default=DEFAULT_MISSING_PRINTS,
+                   metavar="MISSING_FILE",
+                   help="missing_prints.csv (each missing print, MEGA Dream ex reverse holos "
+                        "included), missing_cards.csv, or the JSON written by missing_cards.py "
+                        "--json (default: missing_prints.csv in ~/PokemonData, or "
+                        "missing_cards.csv if there's none).")
     p.add_argument("--out", default=data_path("cardmarket_wants.txt"),
                    help="Text file to write the list to (default: %(default)s).")
     p.add_argument("--csv-out", metavar="FILE",
@@ -234,6 +284,9 @@ def build_arg_parser():
                         "(default: next to --out, with .csv in place of .txt).")
     p.add_argument("--set", dest="sets", action="append", default=[], metavar="NAME",
                    help="Only include this set, by name or TCGdex set id (repeatable).")
+    p.add_argument("--additionals-only", action="store_true",
+                   help="Only list reverse holo prints (MEGA Dream ex: Additionals), from "
+                        "missing_prints.csv.")
     p.add_argument("--max-price", type=Decimal, metavar="AMOUNT",
                    help="Leave out cards priced above this, in --currency (e.g. 20).")
     p.add_argument("--min-price", type=Decimal, metavar="AMOUNT",
@@ -261,8 +314,16 @@ def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     args = build_arg_parser().parse_args(argv)
+    if args.missing_file == DEFAULT_MISSING_PRINTS and not os.path.isfile(args.missing_file):
+        args.missing_file = DEFAULT_MISSING
     currency = args.currency.upper()
     groups = load_missing(args.missing_file, args.sets)
+    if args.additionals_only:
+        groups = reverse_holos_only(groups)
+        if not groups:
+            sys.exit(f"No missing reverse holo prints in {args.missing_file}: they're listed in "
+                     "missing_prints.csv when the RareCandy export says each MEGA Dream ex "
+                     "card's finish (see missing_cards.py --headful).")
     if not groups:
         sys.exit("No missing cards in that file.")
     cards = [c for _, cards in groups for c in cards]
@@ -319,7 +380,8 @@ def main(argv=None):
     if no_product:
         print(f"{len(no_product)} left out because TCGdex has no Cardmarket product for them:")
         for r in no_product:
-            print(f"  {r['set_name']} #{r['local_id']} {r['name']}")
+            finish = f" ({r['finish']})" if r.get("finish") else ""
+            print(f"  {r['set_name']} #{r['local_id']} {r['name']}{finish}")
     unpriced = sum(1 for r in listed if r["price"] is None)
     if unpriced and filtering and not args.skip_unpriced:
         print(f"{unpriced} card(s) in the list have no Cardmarket price and were kept "

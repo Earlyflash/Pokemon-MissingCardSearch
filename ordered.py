@@ -2,7 +2,8 @@
 ordered.txt: cards bought but not yet in the RareCandy collection
 -----------------------------------------------------------------
 One card per line. The first field is the card, either a TCGdex card id
-("me01-161", "M2a-003") or a line copied from an earlier Cardmarket wants
+("me01-161", "M2a-003"), followed by "energy" or "ball" for one of a
+card's reverse holos where missing_cards.py lists them ("M2a-032 energy"), or a line copied from an earlier Cardmarket wants
 list ("1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega
 Evolution)"; the amount says how many are on order, 1 if left off). Anything
 after a " | " is notes for people and for whatever adds the lines (an email
@@ -20,20 +21,31 @@ import os
 import re
 from collections import Counter
 
+from marketplaces.base import FINISH_NORMAL, FINISHES
+
 FIELD_SEP = " | "
 ARRIVED_NAME = "ordered_arrived.txt"
-_CARD_ID = re.compile(r"[^\s()]+-[^\s()]+")
+_CARD_ID = re.compile(r"([^\s()]+-[^\s()]+)(?:\s+(" + "|".join(FINISHES) + r"))?", re.IGNORECASE)
+
+
+def card_key(card_id, finish=None):
+    """How ordered.txt names one print of a card, in lower case: the card id,
+    plus the finish for a reverse holo ("m2a-032 energy"). A plain card id is
+    the normal print."""
+    card_id = (card_id or "").lower()
+    return card_id if finish in (None, FINISH_NORMAL) else f"{card_id} {finish}"
 
 
 def parse_line(line):
-    """(card id in lower case or None, amount, wants list name in casefold or
-    None) for one line, or None for a blank or comment line. A card id line
+    """(card key (see card_key) or None, amount, wants list name in casefold
+    or None) for one line, or None for a blank or comment line. A card id line
     is always one card; to order two, list it twice."""
     card = line.split(FIELD_SEP, 1)[0].strip()
     if not card or card.startswith("#"):  # whole-line only: "Blaine's Quiz #1" is a card
         return None
-    if _CARD_ID.fullmatch(card):
-        return card.lower(), 1, None
+    m = _CARD_ID.fullmatch(card)
+    if m:
+        return card_key(m.group(1), (m.group(2) or "").lower() or None), 1, None
     m = re.fullmatch(r"(\d+)\s*[xX]?\s+(.+)", card)
     amount, text = (int(m.group(1)), m.group(2).strip()) if m else (1, card)
     return None, amount, text.casefold()
@@ -48,7 +60,7 @@ def _read_lines(path):
 
 
 def read_ordered(path):
-    """Returns (set of card ids, Counter of wants list names). A missing file
+    """Returns (set of card keys, Counter of wants list names). A missing file
     means nothing is on order."""
     ids, names = set(), Counter()
     for line in _read_lines(path):
@@ -71,8 +83,8 @@ def prune_arrived(path, checked_ids, missing_ids, arrived_path=None, today=None)
     """Move every card id line whose card is now in the collection out of
     `path` and onto the end of `arrived_path` (default ordered_arrived.txt
     beside it), tagged "| arrived <date>". A card counts as arrived when its
-    id is in `checked_ids` (cards of every set just checked against the
-    collection) but not in `missing_ids` (lower case, both). Cards from sets
+    key (see card_key) is in `checked_ids` (cards of every set just checked
+    against the collection) but not in `missing_ids` (lower case, both). Cards from sets
     that weren't checked stay put, as do wants list name lines, which can't
     be tied to a card.
 
