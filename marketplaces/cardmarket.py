@@ -54,7 +54,7 @@ def card_variants(tcgdex_card):
     each print of a TCGdex card with reverse holos -- the normal print, then
     the reverses -- read off its `variants_detailed`, where every print has
     its own Cardmarket product (M2a's reverses are in Cardmarket's separate
-    "MEGA Dream ex Additionals" expansion). [] for a card with only one
+    "MEGA Dream ex: Additionals" expansion). [] for a card with only one
     print, or whose reverses can't be told apart."""
     detailed = (tcgdex_card or {}).get("variants_detailed") or []
     reverses = [v for v in detailed if v.get("type") == "reverse"]

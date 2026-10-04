@@ -83,7 +83,7 @@ MEGA Dream ex [M2a, Japanese]: own <owned>/<total> (<pct>%), missing <n>
 Most of MEGA Dream ex's (M2a) cards #001-193 come in three prints: normal,
 an Energy reverse holo, and a second reverse holo with a Poké Ball, Love
 Ball, Quick Ball, Dusk Ball, Friend Ball or Team Rocket pattern. Cardmarket
-sells each reverse as its own product, in a separate "MEGA Dream ex
+sells each reverse as its own product, in a separate "MEGA Dream ex:
 Additionals" expansion.
 
 When the RareCandy export says which finish each copy is (its
@@ -420,13 +420,13 @@ are V.1, V.2 and V.3). The box has no way to set language or minimum
 condition, so set those on the wants list after pasting.
 
 Missing MEGA Dream ex reverse holos (see [MEGA Dream ex reverse holos](#mega-dream-ex-reverse-holos))
-each get their own line, from that print's own Cardmarket product in MEGA
-Dream ex Additionals: the Energy reverse is V.1 and the Ball (or Team
+each get their own line, from that print's own Cardmarket product in "MEGA
+Dream ex: Additionals" (colon included): the Energy reverse is V.1 and the Ball (or Team
 Rocket) one V.2, e.g.
 
 ```
-1 Psyduck Damp Ram (V.1) (MEGA Dream ex Additionals)
-1 Psyduck Damp Ram (V.2) (MEGA Dream ex Additionals)
+1 Psyduck Damp Ram (V.1) (MEGA Dream ex: Additionals)
+1 Psyduck Damp Ram (V.2) (MEGA Dream ex: Additionals)
 ```
 
 Their prices are Cardmarket's reverse holo figures (`trend-holo` and so on).

@@ -107,7 +107,7 @@ class TestHelpers(unittest.TestCase):
             {"name": "Abyss Eye Booster Box Case", "idExpansion": 2},
             {"name": "Abyss Eye Booster Box", "idExpansion": 2},
             {"name": "Lillie's Support Gift Box", "idExpansion": 3},
-        ]), {1: "Mega Evolution", 2: "Abyss Eye", 6409: "MEGA Dream ex Additionals"})
+        ]), {1: "Mega Evolution", 2: "Abyss Eye", 6409: "MEGA Dream ex: Additionals"})
 
     def test_versions_in_product_order(self):
         products = [{"idProduct": 851251, "name": "Mega Absol ex", "idExpansion": 6209},
@@ -212,8 +212,8 @@ class TestMain(unittest.TestCase):
     def test_each_print_gets_its_own_product(self):
         lines, rows, _ = self.run_main(missing=MISSING_PRINTS)
         self.assertEqual(lines, ["1 Psyduck Damp Ram (MEGA Dream ex)",
-                                 "1 Psyduck Damp Ram (V.1) (MEGA Dream ex Additionals)",
-                                 "1 Psyduck Damp Ram (V.2) (MEGA Dream ex Additionals)"])
+                                 "1 Psyduck Damp Ram (V.1) (MEGA Dream ex: Additionals)",
+                                 "1 Psyduck Damp Ram (V.2) (MEGA Dream ex: Additionals)"])
         self.assertEqual([r["Finish"] for r in rows], ["normal", "energy", "ball"])
         self.assertTrue(rows[2]["Cardmarket Link"].endswith("idProduct=8"))
 
@@ -223,7 +223,7 @@ class TestMain(unittest.TestCase):
             with open(ordered, "w", encoding="utf-8") as f:
                 f.write("M2a-032 energy | 2026-10-01 | Cardmarket\nM2a-032\n")
             lines, _, _ = self.run_main("--ordered", ordered, missing=MISSING_PRINTS)
-        self.assertEqual(lines, ["1 Psyduck Damp Ram (V.2) (MEGA Dream ex Additionals)"])
+        self.assertEqual(lines, ["1 Psyduck Damp Ram (V.2) (MEGA Dream ex: Additionals)"])
 
     def test_set_filter(self):
         lines, _, _ = self.run_main("--set", "M2a")

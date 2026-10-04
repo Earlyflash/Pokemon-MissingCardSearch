@@ -58,11 +58,12 @@ PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/
 NONSINGLES_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
                   "products_nonsingles_6.json")
 # Expansions with no sealed product to name them, by idExpansion. MEGA Dream
-# ex's reverse holos are their own Cardmarket expansion, named as in its URL
-# (cardmarket.com/en/Pokemon/Products/Singles/MEGA-Dream-ex-Additionals):
+# ex's reverse holos are their own Cardmarket expansion, named as on its page
+# (cardmarket.com/en/Pokemon/Products/Singles/MEGA-Dream-ex-Additionals),
+# colon included -- without it the deck list box drops the expansion:
 # the Energy reverse of each card is V.1 and the Ball (or Team Rocket) one
 # V.2, in idProduct order like every other version.
-UNBOXED_EXPANSIONS = {6409: "MEGA Dream ex Additionals"}
+UNBOXED_EXPANSIONS = {6409: "MEGA Dream ex: Additionals"}
 PENNY = Decimal("0.01")
 PRICE_FIELDS = ("trend", "low", "avg", "avg7", "avg30")
 
@@ -135,7 +136,7 @@ def card_price(row, field, rate, reverse=False):
 def print_product_id(tcgdex_card, finish=None):
     """The Cardmarket product of one print of a TCGdex card: the card's own
     product, or with a finish (from missing_cards.py's print-by-print sets)
-    that print's, e.g. its Energy reverse holo in MEGA Dream ex
+    that print's, e.g. its Energy reverse holo in MEGA Dream ex:
     Additionals."""
     if finish is None:
         return product_id(tcgdex_card)
