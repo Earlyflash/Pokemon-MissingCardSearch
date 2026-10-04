@@ -51,6 +51,24 @@ class FakeContext(SearchContext):
 
 
 class CardmarketTests(unittest.TestCase):
+    def test_card_variants(self):
+        detail = {"pricing": {"cardmarket": {"idProduct": 1}}, "variants_detailed": [
+            {"type": "normal", "thirdParty": {"cardmarket": 1}},
+            {"type": "reverse", "foil": "energy", "thirdParty": {"cardmarket": 2}},
+            {"type": "reverse", "foil": "pokeball", "thirdParty": {"cardmarket": 3}},
+        ]}
+        self.assertEqual(cardmarket.card_variants(detail), [
+            ("normal", "Normal", 1), ("energy", "Energy Reverse Holo", 2),
+            ("ball", "Poké Ball Reverse Holo", 3)])
+        detail["variants_detailed"][2]["foil"] = "team-rocket"
+        self.assertEqual(cardmarket.card_variants(detail)[2][1], "Team Rocket Reverse Holo")
+        detail["variants_detailed"][2]["foil"] = None
+        self.assertEqual(cardmarket.card_variants(detail)[2][1], "Ball Reverse Holo")
+        # Two reverses that can't be told apart, or none at all: one print.
+        detail["variants_detailed"][1]["foil"] = None
+        self.assertEqual(cardmarket.card_variants(detail), [])
+        self.assertEqual(cardmarket.card_variants({"variants_detailed": [{"type": "holo"}]}), [])
+
     def test_is_a_price_guide(self):
         self.assertTrue(cardmarket.PLUGIN.price_guide)
 

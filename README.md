@@ -76,6 +76,40 @@ MEGA Dream ex [M2a, Japanese]: own <owned>/<total> (<pct>%), missing <n>
 | Card Name | TCGdex's card name (in that language's dataset) |
 | TCGdex Card ID | Stable id, handy for the next step (marketplace search) |
 | English Name | The card's English name, also for Japanese/Chinese/Korean cards (blank if unknown) |
+| Finish | Which print is missing, for cards checked print by print (see below): `Normal`, `Energy Reverse Holo`, `Love Ball Reverse Holo`, ... Blank otherwise. |
+
+### MEGA Dream ex reverse holos
+
+Most of MEGA Dream ex's (M2a) cards #001-193 come in three prints: normal,
+an Energy reverse holo, and a second reverse holo with a Poké Ball, Love
+Ball, Quick Ball, Dusk Ball, Friend Ball or Team Rocket pattern. Cardmarket
+sells each reverse as its own product, in a separate "MEGA Dream ex
+Additionals" expansion.
+
+When the RareCandy export says which finish each copy is (its
+Material/Finish column, filled in by RareCandyExporter's `--m2a-variants`),
+every print of those cards counts separately: each one you don't own is
+listed as its own row, with its Finish, so missing a Psyduck's two reverses
+gives two rows. A card you own only as a reverse still has its normal print
+listed. Cards with only one print (the ex, trainers and secret rares) are
+checked by number as before, and set completion still counts cards, any
+print. Each print's Cardmarket product comes from TCGdex, which also
+supplies the pattern names; that's one more TCGdex request per card in the
+set. A copy with no finish in the export (if RareCandy's card page couldn't
+be read) counts as the normal print, and the report names those cards.
+
+`--profile` asks RareCandyExporter for the finishes whenever a RareCandy login
+is cached, since only the profile's owner can see them. Sign in once with:
+
+```bash
+python missing_cards.py --profile Earlyflash --headful
+```
+
+That opens a browser window to log in to RareCandy, and the login is kept in
+`~/PokemonData/.rarecandy-session.json` for later runs, overnight ones
+included. Without a login, or if it has expired, the export runs without
+finishes and M2a is checked by card number only, as before. The export then
+also takes a few minutes longer, as it opens each owned M2a card's page.
 
 TCGdex only has Japanese names for Japanese cards, so English names come
 from Cardmarket, which lists every card in English: each card's Cardmarket
@@ -106,8 +140,11 @@ match, for other tools to consume:
 }
 ```
 
-`rarity` and `finish` are always `null` for now: TCGdex's set listing doesn't
-include them, and fetching rarity costs one request per card.
+`rarity` is always `null` for now: TCGdex's set listing doesn't include it,
+and fetching rarity costs one request per card. `finish` is `null` too,
+except for cards checked print by print (see above), where it's `normal`,
+`energy` or `ball` (the second reverse, whatever its pattern), with the
+print's name in `finish_name`.
 
 ### Flags
 
@@ -116,6 +153,7 @@ include them, and fetching rarity costs one request per card.
 | `--csv FILE` | A CSV exported with RareCandyExporter. |
 | `--profile NAME` | RareCandy profile name or URL; runs RareCandyExporter first. |
 | `--export-csv FILE` | Where `--profile` saves the export (default `rarecandy_export.csv` in `~/PokemonData`). The RareCandy login is cached in `~/PokemonData/.rarecandy-session.json`. |
+| `--headful` | With `--profile`, open a browser to sign in to RareCandy so the export includes MEGA Dream ex finishes (see above). |
 | `--set NAME` | Only check this RareCandy set (repeatable). Default: every set in the collection. |
 | `--map "NAME=CODE"` | Match a RareCandy set name to a TCGdex set code for this run (repeatable). |
 | `--set-map FILE` | Set name overrides file (default `set_map.json`). |
@@ -147,6 +185,11 @@ starts, how many pages it has fetched every few seconds, each set as it's
 searched, and when it's done (with how many marketplaces are still going).
 The slowest shops read their whole catalogue, e.g. Japan2UK's ~88 pages take
 about a minute and a half, and later runs within 6 hours use the cache.
+
+Missing reverse holo prints (see [MEGA Dream ex reverse holos](#mega-dream-ex-reverse-holos))
+are left out of the search: the shops' listings can't be told apart by
+finish, so they'd only be priced as the normal card. wants_list.py covers
+them instead.
 
 Older cached pages aren't simply downloaded again: each one is checked with
 the site using the ETag / Last-Modified it came with, and a page that hasn't
@@ -376,6 +419,19 @@ Cardmarket's product order (Mega Evolution's Mega Absol ex #086, #161 and #180
 are V.1, V.2 and V.3). The box has no way to set language or minimum
 condition, so set those on the wants list after pasting.
 
+Missing MEGA Dream ex reverse holos (see [MEGA Dream ex reverse holos](#mega-dream-ex-reverse-holos))
+each get their own line, from that print's own Cardmarket product in MEGA
+Dream ex Additionals: the Energy reverse is V.1 and the Ball (or Team
+Rocket) one V.2, e.g.
+
+```
+1 Psyduck Damp Ram (V.1) (MEGA Dream ex Additionals)
+1 Psyduck Damp Ram (V.2) (MEGA Dream ex Additionals)
+```
+
+Their prices are Cardmarket's reverse holo figures (`trend-holo` and so on).
+For a list of just that set, use `--set M2a --out m2a_wants.txt`.
+
 ## Cards on order (ordered.txt)
 
 `ordered.txt` (in `~/PokemonData`) lists cards you've bought
@@ -391,6 +447,8 @@ M2a-003 | 2026-09-29 | Japan2UK | #40112 | Mega Venusaur ex 003/193 (M2a)
 
 Only the part before the first ` | ` is read: a TCGdex card id (as in the
 missing cards CSV's TCGdex Card ID column) or a Cardmarket wants list line.
+For one of a MEGA Dream ex card's reverse holos, follow the id with `energy`
+or `ball` (`M2a-032 energy`); the id alone is the normal print.
 The rest is notes. A card id line is one copy; list it twice for two. Lines
 starting with `#` are comments.
 
@@ -463,8 +521,10 @@ which usually means the set was matched to the wrong TCGdex set.
 
 ## Limitations
 
-- A card counts as owned if you own any copy of it. Print finishes (e.g.
-  MEGA Dream ex's reverse holo variants) aren't checked separately.
+- A card counts as owned if you own any copy of it. Print finishes are only
+  checked separately for MEGA Dream ex, and only when the export includes
+  them (see [MEGA Dream ex reverse holos](#mega-dream-ex-reverse-holos)):
+  RareCandy doesn't record finishes for other sets.
 - TCGdex can lag behind brand-new releases; a set it hasn't indexed yet
   will show as unmatched or incomplete.
 - Completion counts distinct card numbers owned against TCGdex's total for

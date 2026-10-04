@@ -148,6 +148,18 @@ class LoadMissingCsvTests(unittest.TestCase):
         cards = price_search.load_missing(path)[0][1]
         self.assertEqual([c.name_en for c in cards], ["Ivysaur", None])
 
+    def test_reverse_holo_prints_are_left_to_the_wants_list(self):
+        path = self.write_csv(
+            "Set Name,TCGdex Set,Language,Card Number,Card Name,TCGdex Card ID,English Name,Finish\r\n"
+            "MEGA Dream ex,M2a,Japanese,032,コダック,M2a-032,Psyduck,Normal\r\n"
+            "MEGA Dream ex,M2a,Japanese,032,コダック,M2a-032,Psyduck,Energy Reverse Holo\r\n"
+            "MEGA Dream ex,M2a,Japanese,033,コダック,M2a-033,Golduck,Love Ball Reverse Holo\r\n"
+            "MEGA Dream ex,M2a,Japanese,034,X,M2a-034,X,\r\n")
+        groups = price_search.load_missing(path)
+        self.assertEqual([c.finish for c in groups[0][1]], ["normal", "energy", "ball", None])
+        kept, dropped = price_search.without_reverse_holos(groups)
+        self.assertEqual(([c.card_id for c in kept[0][1]], dropped), (["M2a-032", "M2a-034"], 2))
+
     def test_other_csv_gives_a_clear_error(self):
         path = self.write_csv("Product Name,Set Name\r\nPikachu,Base Set\r\n")
         with self.assertRaises(SystemExit) as e:

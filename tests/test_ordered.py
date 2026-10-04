@@ -14,6 +14,12 @@ class ParseLineTests(unittest.TestCase):
         self.assertEqual(ordered.parse_line("me01-161 | 2026-09-28 | Cardmarket | 123"),
                          ("me01-161", 1, None))
 
+    def test_card_id_with_finish(self):
+        self.assertEqual(ordered.parse_line("M2a-032 Energy | 2026-10-01"), ("m2a-032 energy", 1, None))
+        self.assertEqual(ordered.parse_line("M2a-032 normal"), ("m2a-032", 1, None))
+        self.assertEqual(ordered.card_key("M2a-032", "ball"), "m2a-032 ball")
+        self.assertEqual(ordered.card_key("M2a-032", None), "m2a-032")
+
     def test_wants_list_line_with_notes(self):
         self.assertEqual(ordered.parse_line("2 Switch (Black Bolt) | 2026-09-28 | Cardmarket"),
                          (None, 2, "switch (black bolt)"))

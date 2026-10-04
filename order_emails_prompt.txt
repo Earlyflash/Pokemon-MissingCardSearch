@@ -15,7 +15,12 @@ For every other order, add one line to the end of ordered.txt per single card
 The card id is the card's TCGdex id. Find it from TCGdex's set listing at
 https://api.tcgdex.net/v2/<lang>/sets/<set id> (lang "en" for English cards,
 "ja" for Japanese): use the "id" of the card whose localId matches the card's
-number in that set, e.g. me01-161 or M2a-003. If you can't pin down the card
+number in that set, e.g. me01-161 or M2a-003. If the card is one of a
+MEGA Dream ex (M2a) card's reverse holos, add " energy" for the Energy
+pattern or " ball" for any other pattern (Poké Ball, Love Ball, Team Rocket,
+...) after the id, e.g. "M2a-032 energy"; Cardmarket names these as
+version V.1 (energy) and V.2 (ball) of the card in "MEGA Dream ex
+Additionals". If you can't pin down the card
 confidently, write the card as the email names it in place of the id, with
 its set and number, so it's still recorded.
 

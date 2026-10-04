@@ -35,6 +35,29 @@ MATCH_LEVELS = (MATCH_EXACT, MATCH_LIKELY, MATCH_UNCERTAIN)
 # one of these, or leave condition as None when the site doesn't say.
 CONDITIONS = ("NM", "LP", "MP", "HP", "DMG")
 
+# Print finishes, for sets whose RareCandy export says which finish each copy
+# is. So far that's only MEGA Dream ex (M2a): most of its #001-193 come as a
+# normal print and two reverse holos, one with an Energy pattern and one with
+# a Poké Ball, Love Ball, ... or Team Rocket pattern ("ball" covers them all,
+# since a card only has one).
+FINISH_NORMAL, FINISH_ENERGY, FINISH_BALL = "normal", "energy", "ball"
+FINISHES = (FINISH_NORMAL, FINISH_ENERGY, FINISH_BALL)
+
+
+def finish_key(text):
+    """FINISH_NORMAL, FINISH_ENERGY or FINISH_BALL for a finish however it's
+    worded: RareCandy's "Energy Reverse Holofoil" or "Love Ball Reverse
+    Holofoil", the missing cards CSV's "Team Rocket Reverse Holo", or a key
+    itself. None when blank."""
+    s = (text or "").strip().lower()
+    if not s:
+        return None
+    if "energy" in s:
+        return FINISH_ENERGY
+    if any(word in s for word in ("reverse", "ball", "rocket")):
+        return FINISH_BALL
+    return FINISH_NORMAL
+
 
 @dataclass(frozen=True)
 class MissingCard:

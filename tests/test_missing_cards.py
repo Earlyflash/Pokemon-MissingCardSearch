@@ -57,12 +57,30 @@ def fake_fetch(url, verbose=False):
 
 
 def write_export(rows):
+    """rows of (name, set name, number, language, quantity[, finish])."""
     f = tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8")
     f.write(HEADER)
-    for name, set_name, number, lang, qty in rows:
-        f.write(f"{name},{set_name},,{number},{lang},,,,1.00,{qty},,C,\n")
+    for name, set_name, number, lang, qty, *finish in rows:
+        f.write(f"{name},{set_name},,{number},{lang},{''.join(finish)},,,1.00,{qty},,C,\n")
     f.close()
     return f.name
+
+
+def prints(card_id, ball="pokeball"):
+    """A TCGdex card record with a normal print and two reverse holos."""
+    return {"id": card_id, "variants_detailed": [
+        {"type": "normal", "thirdParty": {"cardmarket": 10}},
+        {"type": "reverse", "foil": "energy", "thirdParty": {"cardmarket": 11}},
+        {"type": "reverse", "foil": ball, "thirdParty": {"cardmarket": 12}},
+    ]}
+
+
+def fake_fetch_prints(url, verbose=False):
+    """fake_fetch, with M2a-001 and -002 in three prints and -003 (an ex) in one."""
+    for card_id, ball in (("M2a-001", "loveball"), ("M2a-002", "team-rocket")):
+        if url.endswith(f"/ja/cards/{card_id}"):
+            return prints(card_id, ball)
+    return fake_fetch(url, verbose)
 
 
 class NormalizeNumberTests(unittest.TestCase):
@@ -135,6 +153,80 @@ class ResolveSetIdTests(unittest.TestCase):
         missing_cards.resolve_set_id("Mega Evolution", "English", {})
         listing_calls = [c for c in mock_fetch.call_args_list if c.args[0].endswith("/sets")]
         self.assertEqual(len(listing_calls), len({c.args[0] for c in listing_calls}))
+
+
+class FinishTests(unittest.TestCase):
+    def test_read_owned_collects_finishes_only_where_given(self):
+        path = write_export([
+            ("Bulbasaur", "MEGA Dream ex", "1", "Japanese", 1, "Normal"),
+            ("Bulbasaur", "MEGA Dream ex", "1", "Japanese", 1, "Energy Reverse Holofoil"),
+            ("Ivysaur", "MEGA Dream ex", "2", "Japanese", 1, "Poke Ball Reverse Holofoil"),
+            ("Venusaur", "MEGA Dream ex", "3", "Japanese", 1),
+            ("Bulbasaur", "Mega Evolution", "1", "English", 1),
+        ])
+        finishes = {}
+        with redirect_stdout(io.StringIO()):
+            missing_cards.read_owned(path, finishes)
+        os.unlink(path)
+        self.assertEqual(finishes, {("MEGA Dream ex", "Japanese"): {
+            "1": {"normal", "energy"}, "2": {"ball"}, "3": {None}}})
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch_prints)
+    def test_every_print_of_cards_with_reverse_holos(self, _):
+        owned = {("MEGA Dream ex", "Japanese"): {"2", "3"}}
+        finishes = {("MEGA Dream ex", "Japanese"): {"2": {"ball"}, "3": {None}}}
+        with redirect_stdout(io.StringIO()):
+            results, _ = missing_cards.find_missing(
+                owned, {"japanese": {"mega dream ex": "M2a"}}, finishes)
+        r = results[0]
+        self.assertEqual([(c["id"], c.get("finish"), c.get("finish_name")) for c in r["missing"]], [
+            ("M2a-001", "normal", "Normal"),
+            ("M2a-001", "energy", "Energy Reverse Holo"),
+            ("M2a-001", "ball", "Love Ball Reverse Holo"),
+            ("M2a-002", "normal", "Normal"),
+            ("M2a-002", "energy", "Energy Reverse Holo"),
+        ])
+        self.assertEqual((r["owned_count"], r["total"]), (2, 3))
+        self.assertIn("m2a-002 ball", r["card_keys"])
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch_prints)
+    def test_copy_with_no_finish_counts_as_normal(self, _):
+        owned = {("MEGA Dream ex", "Japanese"): {"1", "2", "3"}}
+        finishes = {("MEGA Dream ex", "Japanese"): {"1": {None}, "2": {"energy"}, "3": {None}}}
+        with redirect_stdout(io.StringIO()) as log:
+            results, _ = missing_cards.find_missing(
+                owned, {"japanese": {"mega dream ex": "M2a"}}, finishes)
+        self.assertEqual([(c["id"], c["finish"]) for c in results[0]["missing"]], [
+            ("M2a-001", "energy"), ("M2a-001", "ball"),
+            ("M2a-002", "normal"), ("M2a-002", "ball")])
+        self.assertIn("1 card(s) owned with no finish in the export, counted as normal: 1",
+                      log.getvalue())
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch_prints)
+    def test_arrived_reverse_holo_moves_out_of_ordered_txt(self, _):
+        export = write_export([
+            ("Bulbasaur", "MEGA Dream ex", "1", "Japanese", 1, "Energy Reverse Holofoil"),
+            ("Venusaur", "MEGA Dream ex", "3", "Japanese", 1),
+        ])
+        with tempfile.TemporaryDirectory() as d:
+            ordered = os.path.join(d, "ordered.txt")
+            with open(ordered, "w", encoding="utf-8") as f:
+                f.write("M2a-001 energy | a\nM2a-001 | b\nM2a-001 ball | c\n")
+            out = os.path.join(d, "missing.csv")
+            try:
+                with redirect_stdout(io.StringIO()):
+                    missing_cards.main(["--csv", export, "--out", out, "--min-complete", "0",
+                                        "--ordered", ordered, "--no-english-names"])
+            finally:
+                os.unlink(export)
+            with open(ordered, encoding="utf-8") as f:
+                left = f.read()
+            with open(out, newline="", encoding="utf-8-sig") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual(left, "M2a-001 | b\nM2a-001 ball | c\n")
+        self.assertEqual([(r["Card Number"], r["Finish"]) for r in rows], [
+            ("001", "Normal"), ("001", "Love Ball Reverse Holo"),
+            ("002", "Normal"), ("002", "Energy Reverse Holo"), ("002", "Team Rocket Reverse Holo")])
 
 
 class FindMissingTests(unittest.TestCase):
@@ -254,7 +346,7 @@ class MainTests(unittest.TestCase):
             "card_id": "M2a-002", "set_id": "M2a", "set_name": "MEGA Dream ex",
             "local_id": "002", "name": "フシギソウ", "name_en": "Ivysaur",
             "language": "Japanese",
-            "tcgdex_lang": "ja", "rarity": None, "finish": None,
+            "tcgdex_lang": "ja", "rarity": None, "finish": None, "finish_name": None,
         })
         self.assertEqual(data["unmatched"],
                          [{"set_name": "Mystery", "language": "English",
