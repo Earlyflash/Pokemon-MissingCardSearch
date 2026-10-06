@@ -14,12 +14,27 @@ PRICE_GUIDE = {"version": 1, "createdAt": "2026-09-22T02:48:57+0200", "priceGuid
     {"idProduct": 825955, "idCategory": 51, "avg": 1.04, "low": 0.13, "trend": 0.94},
     {"idProduct": 719448, "idCategory": 51, "avg": 2.1, "low": 0.49, "trend": 1.95},
     {"idProduct": 111111, "idCategory": 51, "avg": None, "low": None, "trend": None},
+    {"idProduct": 907765, "idCategory": 51, "avg": 0.1, "low": 0.05, "trend": 0.08},
+    {"idProduct": 908179, "idCategory": 51, "avg": 0.02, "low": 0.02, "trend": None},
+]}
+# M6a's Exeggcute and Alolan Exeggutor in Cardmarket's Japanese (6602) and
+# Simplified Chinese (6603) 30th Celebration, from its product list.
+PRODUCTS = {"products": [
+    {"idProduct": 907765, "name": "Exeggcute [Hypnosis]", "idExpansion": 6602, "idMetacard": 468378},
+    {"idProduct": 907766, "name": "Alolan Exeggutor [Scale Up | Mega Drain]", "idExpansion": 6602,
+     "idMetacard": 465159},
+    {"idProduct": 908179, "name": "Exeggcute [Hypnosis]", "idExpansion": 6603, "idMetacard": 468378},
+    {"idProduct": 908180, "name": "Alolan Exeggutor [Scale Up | Mega Drain]", "idExpansion": 6603,
+     "idMetacard": 465159},
+    {"idProduct": 719448, "name": "Charmander", "idExpansion": 5328, "idMetacard": 1},
 ]}
 TCGDEX = {
     "https://api.tcgdex.net/v2/en/cards/sv10-081": {
         "id": "sv10-081", "pricing": {"cardmarket": {"unit": "EUR", "idProduct": 825955}}},
     "https://api.tcgdex.net/v2/ja/cards/SV2a-006": {
         "id": "SV2a-006", "pricing": {"cardmarket": {"unit": "EUR", "idProduct": 719448}}},
+    "https://api.tcgdex.net/v2/ja/cards/M6a-001": {
+        "id": "M6a-001", "pricing": {"cardmarket": {"unit": "EUR", "idProduct": 908179}}},
     "https://api.tcgdex.net/v2/en/cards/sv10-001": {"id": "sv10-001", "pricing": None},
     "https://api.tcgdex.net/v2/en/cards/sv10-002": {
         "id": "sv10-002", "pricing": {"cardmarket": {"idProduct": 111111}}},
@@ -45,6 +60,8 @@ class FakeContext(SearchContext):
             if self.guide_error:
                 raise self.guide_error
             return PRICE_GUIDE
+        if url == cardmarket.PRODUCTS_URL:
+            return PRODUCTS
         if url not in TCGDEX:
             raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
         return TCGDEX[url]
@@ -91,6 +108,28 @@ class CardmarketTests(unittest.TestCase):
         cardmarket.PLUGIN.search_set([card("sv10-081")], ctx)
         cardmarket.PLUGIN.search_set([card("SV2a-006", "ja")], ctx)
         self.assertEqual(ctx.urls.count(cardmarket.PRICE_GUIDE_URL), 1)
+
+    def test_product_fixes_pair_mislinked_expansions_in_order(self):
+        products = PRODUCTS["products"]
+        self.assertEqual(cardmarket.product_fixes(products, "ja"), {908179: 907765, 908180: 907766})
+        self.assertEqual(cardmarket.product_fixes(products, "en"), {})
+        # Expansions that no longer line up card for card are left alone.
+        self.assertEqual(cardmarket.product_fixes(products[1:], "ja"), {})
+        swapped = [dict(p, idMetacard=9) if p["idProduct"] == 907765 else p for p in products]
+        self.assertEqual(cardmarket.product_fixes(swapped, "ja"), {})
+
+    def test_m6a_links_to_the_japanese_print(self):
+        ctx = FakeContext()
+        [offer] = cardmarket.PLUGIN.search_set([card("M6a-001", "ja")], ctx)
+        self.assertEqual((offer.price, offer.url), (
+            Decimal("0.05"), "https://www.cardmarket.com/en/Pokemon/Products?idProduct=907765"))
+        cardmarket.PLUGIN.search_set([card("SV2a-006", "ja")], ctx)
+        self.assertEqual(ctx.urls.count(cardmarket.PRODUCTS_URL), 1)
+
+    def test_english_cards_need_no_product_list(self):
+        ctx = FakeContext()
+        cardmarket.PLUGIN.search_set([card("sv10-081")], ctx)
+        self.assertNotIn(cardmarket.PRODUCTS_URL, ctx.urls)
 
     def test_cards_without_a_product_or_a_price_are_skipped(self):
         offers = cardmarket.PLUGIN.search_set(

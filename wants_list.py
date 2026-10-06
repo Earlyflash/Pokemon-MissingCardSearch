@@ -45,15 +45,14 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from marketplaces.base import SearchContext
 from marketplaces.base import FINISH_NORMAL
-from marketplaces.cardmarket import (PLUGIN as CARDMARKET, PRODUCT_URL, TCGDEX_CARD_URL,
-                                     TCGDEX_MAX_AGE, card_variants, product_id)
+from marketplaces.cardmarket import (PLUGIN as CARDMARKET, PRODUCT_URL, PRODUCTS_URL,
+                                     TCGDEX_CARD_URL, TCGDEX_MAX_AGE, card_variants, product_fixes,
+                                     product_id)
 from data_dir import data_path, ensure_parent
 from ordered import card_key
 from price_search import (DEFAULT_CACHE_DIR, DEFAULT_MISSING, DEFAULT_ORDERED, exchange_rates, load_missing,
                           read_ordered)
 
-PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
-                "products_singles_6.json")
 # Sealed products (boosters, boxes, tins...): the only public place that
 # names Cardmarket's expansions, via products like "Abyss Eye Booster".
 NONSINGLES_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
@@ -174,13 +173,19 @@ def build_rows(groups, pids, products, nonsingles, guide, field, rate):
     """One dict per missing card: where it's from, its deck list line name
     (None if it has no Cardmarket product) and its converted price. A set
     Cardmarket's sealed products don't name falls back to the set name in
-    the missing cards file."""
+    the missing cards file. Products TCGdex links to the wrong print (see
+    product_fixes) are swapped for the right ones."""
     by_id = {p["idProduct"]: p for p in products if p.get("idProduct") is not None}
     expansions, numbered = expansion_names(nonsingles), versions(by_id.values())
+    fixes = {}
     rows = []
     for set_entry, cards in groups:
         for c in cards:
+            lang = c.tcgdex_lang or "en"
+            if lang not in fixes:
+                fixes[lang] = product_fixes(products, lang)
             pid = pids.get((c.card_id, c.finish))
+            pid = fixes[lang].get(pid, pid)
             product = by_id.get(pid)
             expansion = product and (expansions.get(product.get("idExpansion"))
                                      or set_entry["set_name"])

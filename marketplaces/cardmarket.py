@@ -13,7 +13,9 @@ for an English near-mint copy can be higher.
 
 The price guide has no card numbers, so cards are tied to Cardmarket
 products through TCGdex, whose card records carry the Cardmarket product id
-(`pricing.cardmarket.idProduct`), one request per missing card.
+(`pricing.cardmarket.idProduct`), one request per missing card. Where TCGdex
+links a set to the wrong print's products (see MISLINKED_EXPANSIONS), they
+are swapped for the right ones using Cardmarket's product list.
 """
 import urllib.error
 import urllib.parse
@@ -23,6 +25,14 @@ from marketplaces.base import (FINISH_BALL, FINISH_ENERGY, FINISH_NORMAL, MATCH_
                                Marketplace, Offer)
 
 PRICE_GUIDE_URL = "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_6.json"
+PRODUCTS_URL = ("https://downloads.s3.cardmarket.com/productCatalog/productList/"
+                "products_singles_6.json")
+# Cardmarket expansions TCGdex links in place of the right one, by TCGdex
+# language: {lang: {wrong idExpansion: right idExpansion}}. TCGdex gives the
+# Japanese 30th Celebration (M6a) cards the products of Cardmarket's
+# Simplified Chinese printing (6603) instead of its Japanese one (6602); the
+# two list the same 176 cards in the same idProduct order.
+MISLINKED_EXPANSIONS = {"ja": {6603: 6602}}
 TCGDEX_CARD_URL = "https://api.tcgdex.net/v2/{lang}/cards/{card_id}"
 # A card's Cardmarket product never changes, and TCGdex ignores conditional
 # requests, so its card lookups are kept for this long rather than the
@@ -35,6 +45,26 @@ PRODUCT_URL = "https://www.cardmarket.com/en/Pokemon/Products?idProduct={id}"
 def product_id(tcgdex_card):
     cm = ((tcgdex_card or {}).get("pricing") or {}).get("cardmarket") or {}
     return cm.get("idProduct")
+
+
+def product_fixes(products, lang):
+    """{wrong idProduct: right idProduct} for TCGdex language `lang`, from
+    Cardmarket's product list: each product in a wrong expansion of
+    MISLINKED_EXPANSIONS paired with the one in the same place, in idProduct
+    order, in the right expansion. Expansions that don't line up card for
+    card (the same idMetacard all the way) are left alone, so a change on
+    Cardmarket's side can't pair up different cards."""
+    def listed(expansion):
+        return sorted((p for p in products
+                       if p.get("idExpansion") == expansion and p.get("idProduct") is not None),
+                      key=lambda p: p["idProduct"])
+    fixes = {}
+    for wrong, right in MISLINKED_EXPANSIONS.get(lang, {}).items():
+        bad, good = listed(wrong), listed(right)
+        if bad and len(bad) == len(good) and all(
+                b.get("idMetacard") == g.get("idMetacard") for b, g in zip(bad, good)):
+            fixes.update((b["idProduct"], g["idProduct"]) for b, g in zip(bad, good))
+    return fixes
 
 
 def _foil_name(foil):
@@ -100,8 +130,25 @@ class Cardmarket(Marketplace):
             ctx.debug(f"price guide from {data.get('createdAt')}: {len(ctx.state['guide'])} products")
         return ctx.state["guide"]
 
+    def product_fixes(self, ctx, lang):
+        """product_fixes() for TCGdex language `lang`. Cardmarket's product
+        list (~14 MB) is downloaded once per run, and only for a language
+        with mislinked expansions."""
+        if lang not in MISLINKED_EXPANSIONS:
+            return {}
+        key = ("fixes", lang)
+        if key not in ctx.state:
+            data = ctx.fetch(PRODUCTS_URL, as_json=True, timeout=120)
+            ctx.state[key] = product_fixes(data.get("products", []), lang)
+            if not ctx.state[key]:
+                ctx.log(f"Cardmarket's {lang} expansions {MISLINKED_EXPANSIONS[lang]} no longer "
+                        "line up, so TCGdex's links to them are left as they are")
+        return ctx.state[key]
+
     def search_set(self, cards, ctx):
         self.price_guide_rows(ctx)  # if the download fails, fail the set once, not every card
+        for lang in {c.tcgdex_lang or "en" for c in cards}:
+            self.product_fixes(ctx, lang)
         return super().search_set(cards, ctx)
 
     def search(self, card, ctx):
@@ -117,6 +164,7 @@ class Cardmarket(Marketplace):
         if pid is None:
             ctx.debug(f"{card.card_id}: TCGdex has no Cardmarket product")
             return []
+        pid = self.product_fixes(ctx, card.tcgdex_lang or "en").get(pid, pid)
         row = self.price_guide_rows(ctx).get(pid)
         low = money((row or {}).get("low"))
         if low is None:

@@ -117,6 +117,21 @@ class TestHelpers(unittest.TestCase):
                     {"idProduct": 5, "name": "Switch", "idExpansion": 6209}]
         self.assertEqual(wants_list.versions(products), {851157: 1, 851232: 2, 851251: 3})
 
+    def test_m6a_uses_the_japanese_product(self):
+        from marketplaces.base import MissingCard
+        products = [
+            {"idProduct": 907765, "name": "Exeggcute [Hypnosis]", "idExpansion": 6602, "idMetacard": 1},
+            {"idProduct": 908179, "name": "Exeggcute [Hypnosis]", "idExpansion": 6603, "idMetacard": 1},
+        ]
+        nonsingles = [{"name": "30th Celebration JP Booster", "idExpansion": 6602},
+                      {"name": "30th Celebration Simplified Chinese Booster", "idExpansion": 6603}]
+        c = MissingCard("M6a-001", "M6a", "30th Celebration", "001", "タマタマ", "Japanese", "ja")
+        [row] = wants_list.build_rows([({"set_name": "30th Celebration"}, [c])],
+                                      {("M6a-001", None): 908179}, products, nonsingles,
+                                      {907765: {"trend": 0.08}}, "trend", Decimal("1"))
+        self.assertEqual((row["id_product"], row["line_name"], row["price"]),
+                         (907765, "Exeggcute Hypnosis (30th Celebration JP)", Decimal("0.08")))
+
     def test_line_name(self):
         product = {"name": "Mega Absol ex [Terminal Period | Claw of Darkness]"}
         self.assertEqual(wants_list.deck_list_line_name(product, 2, "Mega Evolution"),
