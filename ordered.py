@@ -75,6 +75,22 @@ def read_ordered(path):
     return ids, names
 
 
+def read_ordered_shops(path):
+    """{card key: [shop, ...]} for every card id line, the shop being the
+    third field ("me01-161 | 2026-09-28 | Cardmarket | ..."), one per line
+    that names one. A card with no shop noted maps to an empty list."""
+    shops = {}
+    for line in _read_lines(path):
+        parsed = parse_line(line)
+        if not parsed or not parsed[0]:
+            continue
+        fields = [f.strip() for f in line.split(FIELD_SEP.strip())]
+        mine = shops.setdefault(parsed[0], [])
+        if len(fields) > 2 and fields[2] and fields[2] not in mine:
+            mine.append(fields[2])
+    return shops
+
+
 def default_arrived_path(ordered_path):
     return os.path.join(os.path.dirname(os.path.abspath(ordered_path)), ARRIVED_NAME)
 

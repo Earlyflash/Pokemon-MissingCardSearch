@@ -223,7 +223,9 @@ by set, and one column per marketplace. Sets come in set number order (M1L, M1S,
 M2a...); a menu at the top re-sorts them by fewest cards missing or cheapest to
 complete (sets with cards nobody has for sale go last). Cards listed in
 `ordered.txt` (see [Cards on order](#cards-on-order-orderedtxt)) are shaded and tagged
-"ordered", and can be hidden with a tick box, so they aren't bought twice. Cards are named in English where
+"ordered", and can be hidden with a tick box, so they aren't bought twice. The
+shop each was ordered from (the third field of its `ordered.txt` line) has its
+cell ringed; "Deckd" is enough to find DeckdHQ. Cards are named in English where
 missing_cards.py found an English name, with the printed name underneath, and
 the marketplace names stay at the top of the screen as you scroll. Each cell is that marketplace's
 cheapest copy (with its condition or grade, and how many more copies it has),

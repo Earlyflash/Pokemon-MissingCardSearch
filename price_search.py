@@ -28,6 +28,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -35,7 +36,7 @@ import marketplaces
 from marketplaces.base import (MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer, SearchContext,
                                finish_key)
 from data_dir import data_path, ensure_parent
-from ordered import read_ordered
+from ordered import read_ordered, read_ordered_shops
 
 DEFAULT_CACHE_DIR = data_path(".price_cache")
 # Cards already bought but not yet in the collection (see ordered.py).
@@ -392,7 +393,7 @@ def redraw_html(groups, available, args):
                                                  - {p.id for p in plugins})]
     html_out = args.html_out or os.path.join(os.path.dirname(args.out), "price_table.html")
     write_html(groups, listing_ranked, guide_ranked, plugins, currency, html_out,
-               ordered=read_ordered(args.ordered)[0])
+               ordered=read_ordered_shops(args.ordered))
     print(f"Redrew the price table from {args.out} and {args.guide_out} (no marketplaces "
           f"searched) to {os.path.abspath(html_out)}")
 
@@ -449,6 +450,9 @@ tr.ordered td.card, tr.ordered td.num { color: var(--ordered-fg); }
 span.ordered { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px;
                background: var(--ordered-fg); color: var(--bg); font-size: 10px; font-weight: 600;
                text-transform: uppercase; letter-spacing: .03em; }
+td.ordered-from a, td.ordered-from span.here { display: inline-block; padding: 0 5px;
+               border: 2px solid var(--ordered-fg); border-radius: 999px; }
+td.ordered-from span.here { color: var(--ordered-fg); font-size: 10px; font-weight: 600; }
 """
 
 
@@ -464,7 +468,8 @@ def _html_cell(offers, currency, guide=False, best=False, prefix="from ", market
     highlight still shows. Kept short so the table stays narrow."""
     esc = html.escape
     if not offers:
-        return f'<td class="{("price " + extra).strip()}"></td>'
+        here = '<span class="here">ordered</span>' if "ordered-from" in extra else ""
+        return f'<td class="{("price " + extra).strip()}">{here}</td>'
     price, o = offers[0]
     shown = _money(price, currency) if price is not None else f"{o.currency} {o.price}"
     side = None
@@ -495,6 +500,23 @@ def _set_number_key(set_entry):
     return [int(x) if i % 2 else x for i, x in enumerate(parts)], set_entry["language"]
 
 
+def _shop_key(name):
+    """A shop name boiled down for matching: no accents, spaces or
+    punctuation, in lower case ("Radam's Poké Stop" -> "radamspokestop")."""
+    name = unicodedata.normalize("NFKD", name or "")
+    return "".join(ch for ch in name if ch.isalnum()).casefold()
+
+
+def _ordered_from(shops, plugins):
+    """The ids of the marketplaces among `plugins` that `shops` (names as
+    ordered.txt has them) are. A shop matches a marketplace whose name or id
+    it starts, or is started by, so "Deckd" finds DeckdHQ."""
+    keys = [k for k in map(_shop_key, shops) if k]
+    return {p.id for p in plugins
+            if any(k.startswith(m) or m.startswith(k)
+                   for k in keys for m in (_shop_key(p.name), _shop_key(p.id)) if m)}
+
+
 def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path, ordered=frozenset()):
     """A table with one row per missing card and one column per marketplace.
     Each cell is that marketplace's cheapest copy, linked to the listing; the
@@ -503,8 +525,9 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path, or
     highlighted. A market price guide (e.g. PulseAPI) comes first, straight
     after the card name, in bold, and stays in view with the card number and
     name when scrolling sideways. Cards whose TCGdex id is in `ordered`
-    (lower case, from read_ordered) are shaded and tagged as already ordered,
-    so they aren't bought twice. Sets come in set number order, and a menu
+    (lower case, the keys of read_ordered_shops) are shaded and tagged as
+    already ordered, so they aren't bought twice; when `ordered` is a dict
+    of the shops each was ordered from, those shops' cells are ringed. Sets come in set number order, and a menu
     re-sorts them by cards missing or by the cost of the cheapest listings."""
     esc = html.escape
     market_cols = [(p, True) for p in plugins if p.price_guide and p.market_reference]
@@ -533,6 +556,9 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path, or
             best_id = listed[0][1].marketplace if listed and listed[0][0] is not None else None
             market = next((po[0] for po in guided if po[0] is not None
                            and po[1].marketplace in market_ids), None)
+            key = c.card_id.lower()
+            bought_at = (_ordered_from(ordered.get(key) or [], [p for p, _ in columns])
+                         if key in ordered and isinstance(ordered, dict) else set())
             cells = []
             for p, g in columns:
                 mine = [po for po in (guided if g else listed) if po[1].marketplace == p.id]
@@ -541,16 +567,19 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path, or
                     shop_totals[p.id][1] += 1
                 cells.append(_html_cell(mine, currency, guide=g, best=not g and p.id == best_id,
                                         prefix=p.guide_prefix, market=market,
-                                        extra=col_class.get(p.id, "")))
+                                        extra=" ".join(filter(None, [
+                                            col_class.get(p.id), p.id in bought_at and "ordered-from"]))))
             if c.name_en and c.name_en != c.name:
                 card = f'{esc(c.name_en)}<small>{esc(c.name)}</small>'
             else:
                 card = esc(c.name)
             row_class = "sold" if listed else "unsold"
-            if c.card_id.lower() in ordered:
+            if key in ordered:
                 n_ordered += 1
                 row_class += " ordered"
-                card += '<span class="ordered" title="Listed in ordered.txt">ordered</span>'
+                where = ", ".join(ordered[key]) if isinstance(ordered, dict) else ""
+                title = f"Ordered from {where}" if where else "Listed in ordered.txt"
+                card += f'<span class="ordered" title="{esc(title)}">ordered</span>'
             rows.append(f'<tr class="{row_class}"><td class="num {sticky[0]}">'
                         f'#{esc(c.local_id)}</td><td class="card {sticky[1]}">{card}</td>'
                         f'{"".join(cells)}</tr>')
@@ -579,8 +608,8 @@ def write_html(groups, listing_ranked, guide_ranked, plugins, currency, path, or
     if guide_note:
         guide_note += (" Those price-guide columns aren't listings and don't count towards "
                        "the totals.")
-    ordered_note = (f" {n_ordered} card(s) already ordered are shaded and tagged “ordered”."
-                    if n_ordered else "")
+    ordered_note = (f" {n_ordered} card(s) already ordered are shaded and tagged “ordered”, "
+                    f"with the shop each was ordered from ringed." if n_ordered else "")
     doc = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -776,7 +805,7 @@ def main(argv=None):
         print(f"Wrote {rows} price guide price(s) to {os.path.abspath(args.guide_out)}")
     html_out = args.html_out or os.path.join(os.path.dirname(args.out), "price_table.html")
     write_html(groups, listing_ranked, guide_ranked, plugins, currency, html_out,
-               ordered=read_ordered(args.ordered)[0])
+               ordered=read_ordered_shops(args.ordered))
     print(f"Wrote the price table to {os.path.abspath(html_out)}")
 
 if __name__ == "__main__":
