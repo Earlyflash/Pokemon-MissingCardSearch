@@ -275,6 +275,26 @@ class TestMain(unittest.TestCase):
         lines, _, _ = self.run_main("--set", "M2a")
         self.assertEqual(lines, [f"1 Pikachu Thunder Jolt {MD}", f"1 Switch {MD}"])
 
+    def test_split_sets(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "missing.json")
+            with open(src, "w", encoding="utf-8") as f:
+                json.dump(MISSING, f)
+            with redirect_stdout(io.StringIO()):
+                wants_list.main([src, "--out", os.path.join(d, "wants.txt"), "--no-cache",
+                                 "--ordered", os.path.join(d, "none.txt"), "--split-sets"])
+            files = {}
+            for name in sorted(os.listdir(d)):
+                if name.endswith(".txt"):
+                    with open(os.path.join(d, name), encoding="utf-8") as f:
+                        files[name] = f.read().splitlines()
+        self.assertEqual(files, {
+            "wants_destined-rivals.txt": [
+                f"1 Charizard ex Infernal Reign Burning Darkness (V.1) {DR}",
+                f"1 Dragapult ex Jet Headbutt Phantom Dive {DR}", f"1 Switch {DR}"],
+            "wants_mega-dream-ex.txt": [f"1 Pikachu Thunder Jolt {MD}", f"1 Switch {MD}"],
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

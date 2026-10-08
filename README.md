@@ -385,6 +385,7 @@ wants list in a single paste:
 python wants_list.py                      # ~/PokemonData/cardmarket_wants.txt
 python wants_list.py missing.json --max-price 20            # leave out cards over £20
 python wants_list.py missing.json --set "Abyss Eye" --min-price 1 --out abyss_eye.txt
+python wants_list.py --split-sets           # one list per set
 ```
 
 Cardmarket's box takes one card per line as amount, name and attacks, then
@@ -401,6 +402,7 @@ Cardmarket's report of what it added.
 |---|---|
 | `--out FILE` | Where to write the list (default `cardmarket_wants.txt` in `~/PokemonData`). |
 | `--csv-out FILE` | The per-card CSV (default: `--out` with `.csv`). |
+| `--split-sets` | Write each set's list to its own file instead of one list: `--out` with the set's name added (`cardmarket_wants_destined-rivals.txt`; the language too when a set is collected in more than one). The CSV stays one file. |
 | `--set NAME` | Only include this set, by name or TCGdex set id (repeatable). |
 | `--additionals-only` | Only list reverse holo prints (MEGA Dream ex: Additionals); see below. |
 | `--exclude-additionals` | Leave out reverse holo prints (MEGA Dream ex: Additionals). |

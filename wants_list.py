@@ -28,6 +28,7 @@ Usage examples:
   python wants_list.py missing_cards.csv
   python wants_list.py missing.json --max-price 20 --out cheap_wants.txt
   python wants_list.py missing.json --set "Abyss Eye" --min-price 1
+  python wants_list.py --split-sets --exclude-additionals
 
 Run `python wants_list.py --help` for the full flag list.
 """
@@ -278,6 +279,12 @@ def _sort_key(text):
     return plain.casefold(), text
 
 
+def write_lines(lines, path):
+    ensure_parent(path)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + ("\n" if lines else ""))
+
+
 def write_csv(rows, currency, path):
     """What went into the list and why each other card was left out, for
     checking the paste against Cardmarket's report of what it added."""
@@ -308,6 +315,9 @@ def build_arg_parser():
     p.add_argument("--csv-out", metavar="FILE",
                    help="CSV of every missing card with its price and whether it made the list "
                         "(default: next to --out, with .csv in place of .txt).")
+    p.add_argument("--split-sets", action="store_true",
+                   help="Write each set's list to its own file, named after --out with the set "
+                        "added (cardmarket_wants_destined-rivals.txt), in place of one list.")
     p.add_argument("--set", dest="sets", action="append", default=[], metavar="NAME",
                    help="Only include this set, by name or TCGdex set id (repeatable).")
     additionals = p.add_mutually_exclusive_group()
@@ -391,9 +401,16 @@ def main(argv=None):
     mark_ordered(rows, ordered)
     listed = [r for r in rows if r["status"] == "yes"]
     lines = deck_list_lines(listed)
-    ensure_parent(args.out)
-    with open(args.out, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + ("\n" if lines else ""))
+    if args.split_sets:
+        paths = set_list_paths(rows, args.out)
+        written = []
+        for key, path in paths.items():
+            set_lines = deck_list_lines([r for r in listed if (r["set_id"], r["language"]) == key])
+            if set_lines:
+                write_lines(set_lines, path)
+                written.append(path)
+    else:
+        write_lines(lines, args.out)
     csv_out = args.csv_out or os.path.splitext(args.out)[0] + ".csv"
     ensure_parent(csv_out)
     write_csv(rows, currency, csv_out)
@@ -417,9 +434,16 @@ def main(argv=None):
     if unpriced and filtering and not args.skip_unpriced:
         print(f"{unpriced} card(s) in the list have no Cardmarket price and were kept "
               "(--skip-unpriced leaves them out).")
-    print(f"Wrote the list to {os.path.abspath(args.out)} and every card's details to "
-          f"{os.path.abspath(csv_out)}.")
-    print("Paste the list into a Cardmarket wants list's \"Add Deck List\" box.")
+    if args.split_sets:
+        print(f"Wrote {len(written)} set list(s):")
+        for path in written:
+            print(f"  {os.path.abspath(path)}")
+        print(f"and every card's details to {os.path.abspath(csv_out)}.")
+        print("Paste each list into its own Cardmarket wants list's \"Add Deck List\" box.")
+    else:
+        print(f"Wrote the list to {os.path.abspath(args.out)} and every card's details to "
+              f"{os.path.abspath(csv_out)}.")
+        print("Paste the list into a Cardmarket wants list's \"Add Deck List\" box.")
 
 
 if __name__ == "__main__":
