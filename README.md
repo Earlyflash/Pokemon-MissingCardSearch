@@ -453,8 +453,8 @@ that haven't reached your RareCandy collection yet, so price_search.py shades
 them and wants_list.py leaves them out. One card per line:
 
 ```
-# card id | date ordered | shop | order number | the card as the order named it
-me01-161 | 2026-09-28 | Cardmarket | 1234567890 | Mega Absol ex 161/132
+# card id | date ordered | shop | order number | seller | the card as the order named it
+me01-161 | 2026-09-28 | Cardmarket | 1234567890 | seller KardKafe | Mega Absol ex 161/132
 M2a-003 | 2026-09-29 | Japan2UK | #40112 | Mega Venusaur ex 003/193 (M2a)
 1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)
 ```
@@ -464,7 +464,14 @@ missing cards CSV's TCGdex Card ID column) or a Cardmarket wants list line.
 For one of a MEGA Dream ex card's reverse holos, follow the id with `energy`
 or `ball` (`M2a-032 energy`); the id alone is the normal print.
 The rest is notes. A card id line is one copy; list it twice for two. Lines
-starting with `#` are comments.
+starting with `#` are comments; put `# cancelled ` in front of a card's line
+when its order is cancelled or refunded. For marketplace orders, a
+`seller <name>` field after the order number names the seller (left out for
+orders from a shop itself).
+
+`python ordered.py sort ~/PokemonData/ordered.txt` sorts the file by order
+date, then shop, then seller, so each order's cards sit together; cancelled
+lines sort with their order and other comments stay at the top.
 
 Each time missing_cards.py runs, any card id line whose card is now in the
 collection is moved out of `ordered.txt` onto the end of
@@ -485,7 +492,8 @@ Claude can read order confirmations from your email and add their cards to
   connected (Microsoft 365 by default; set `ORDER_EMAIL_TOOLS` to the tool
   names of another email connector). Claude may only search and read email,
   read `~/PokemonData`, edit `ordered.txt` and fetch from TCGdex. Its report
-  is appended to `~/PokemonData/nightly_orders.log`. Schedule it before
+  is appended to `~/PokemonData/nightly_orders.log`, and `ordered.txt` is
+  sorted afterwards. Schedule it before
   `nightly_search.sh` (see [Running it overnight](#running-it-overnight)).
 - **Or in Claude Cowork:** make a daily scheduled task, give it your
   `~/PokemonData` folder, and paste in the prompt from

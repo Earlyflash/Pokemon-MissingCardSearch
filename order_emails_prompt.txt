@@ -10,7 +10,11 @@ recorded: skip it.
 For every other order, add one line to the end of ordered.txt per single card
 (one line per copy; skip sealed product, sleeves and other accessories):
 
-<card id> | <order date as YYYY-MM-DD> | <shop> | <order number> | <the card as the email names it>
+<card id> | <order date as YYYY-MM-DD> | <shop> | <order number> | seller <seller> | <the card as the email names it>
+
+The "seller <seller>" field is for marketplaces where each order comes from
+one seller, such as Cardmarket ("Seller: KardKafe" in its emails, giving
+"seller KardKafe") and eBay. Leave it out for orders from a shop itself.
 
 The card id is the card's TCGdex id. Find it from TCGdex's set listing at
 https://api.tcgdex.net/v2/<lang>/sets/<set id> (lang "en" for English cards,

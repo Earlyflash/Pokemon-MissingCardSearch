@@ -9,7 +9,10 @@ Evolution)"; the amount says how many are on order, 1 if left off). Anything
 after a " | " is notes for people and for whatever adds the lines (an email
 task, say), e.g.
 
-    me01-161 | 2026-09-28 | Cardmarket | 1234567890 | Mega Absol ex 161/132
+    me01-161 | 2026-09-28 | Cardmarket | 1234567890 | seller KardKafe | Mega Absol ex 161/132
+
+A "seller <name>" field names the seller of a marketplace order, and
+sort_file sorts by it after the date and shop.
 
 Blank lines and lines starting with # are skipped. price_search.py and
 wants_list.py read it so ordered cards aren't bought twice, and
