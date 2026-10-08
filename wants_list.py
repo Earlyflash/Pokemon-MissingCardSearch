@@ -253,6 +253,26 @@ def deck_list_lines(rows):
     return [f"{counts[name]} {name}" for name in sorted(counts, key=_sort_key)]
 
 
+def set_list_paths(rows, out):
+    """{(set_id, language): file} for writing each set's list on its own:
+    --out with the set's name added, "cardmarket_wants.txt" ->
+    "cardmarket_wants_destined-rivals.txt". The language is added too when a
+    set name is collected in more than one."""
+    stem, ext = os.path.splitext(out)
+    sets = {(r["set_id"], r["language"]): r["set_name"] for r in rows}
+    names = Counter(sets.values())
+    paths = {}
+    for (set_id, language), set_name in sets.items():
+        label = set_name if names[set_name] == 1 else f"{set_name} {language}"
+        paths[(set_id, language)] = f"{stem}_{_slug(label) or _slug(set_id)}{ext}"
+    return paths
+
+
+def _slug(text):
+    plain = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
+    return "-".join(re.findall(r"[a-z0-9]+", plain.casefold()))
+
+
 def _sort_key(text):
     plain = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return plain.casefold(), text

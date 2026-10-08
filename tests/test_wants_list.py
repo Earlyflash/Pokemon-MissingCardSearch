@@ -172,6 +172,21 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(wants_list.deck_list_lines(rows),
                          ["1 air Balloon", "1 Pikachu", "1 Poké Pad", "2 Switch"])
 
+    def test_set_list_paths(self):
+        rows = [{"set_id": "sv10", "language": "English", "set_name": "Destined Rivals"},
+                {"set_id": "sv10", "language": "English", "set_name": "Destined Rivals"},
+                {"set_id": "me01", "language": "English", "set_name": "Mega Evolution"},
+                {"set_id": "me01", "language": "German", "set_name": "Mega Evolution"},
+                {"set_id": "M2a", "language": "Japanese", "set_name": "MEGA Dream ex: Pokémon"},
+                {"set_id": "SV9", "language": "Japanese", "set_name": "バトルパートナーズ"}]
+        self.assertEqual(wants_list.set_list_paths(rows, os.path.join("d", "wants.txt")), {
+            ("sv10", "English"): os.path.join("d", "wants_destined-rivals.txt"),
+            ("me01", "English"): os.path.join("d", "wants_mega-evolution-english.txt"),
+            ("me01", "German"): os.path.join("d", "wants_mega-evolution-german.txt"),
+            ("M2a", "Japanese"): os.path.join("d", "wants_mega-dream-ex-pokemon.txt"),
+            ("SV9", "Japanese"): os.path.join("d", "wants_sv9.txt"),
+        })
+
 
 @patch.object(wants_list.SearchContext, "fetch", fake_fetch)
 @patch.object(wants_list, "exchange_rates", lambda cur, target: {"EUR": Decimal("0.5"), target: 1})
