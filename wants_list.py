@@ -332,7 +332,9 @@ def build_arg_parser():
                              help="Only list reverse holo prints (MEGA Dream ex: Additionals), "
                                   "from missing_prints.csv.")
     additionals.add_argument("--exclude-additionals", action="store_true",
-                             help="Leave out reverse holo prints (MEGA Dream ex: Additionals).")
+                             help="Leave out reverse holo prints (MEGA Dream ex: Additionals), "
+                                  "reading missing_cards.csv by default so a card owned in any "
+                                  "print is left out too.")
     p.add_argument("--max-price", type=Decimal, metavar="AMOUNT",
                    help="Leave out cards priced above this, in --currency (e.g. 20).")
     p.add_argument("--min-price", type=Decimal, metavar="AMOUNT",
@@ -360,7 +362,11 @@ def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
     args = build_arg_parser().parse_args(argv)
-    if args.missing_file == DEFAULT_MISSING_PRINTS and not os.path.isfile(args.missing_file):
+    # Without the reverse holos, a card counts as had in any print, as in
+    # missing_cards.csv: missing_prints.csv lists the normal print of a card
+    # owned only as a reverse holo.
+    if args.missing_file == DEFAULT_MISSING_PRINTS and (args.exclude_additionals
+                                                        or not os.path.isfile(args.missing_file)):
         args.missing_file = DEFAULT_MISSING
     currency = args.currency.upper()
     groups = load_missing(args.missing_file, args.sets)

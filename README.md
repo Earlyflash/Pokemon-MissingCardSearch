@@ -408,7 +408,7 @@ Cardmarket's report of what it added.
 | `--split-sets` | Write each set's list to its own file instead of one list: `--out` with the set's name added (`cardmarket_wants_destined-rivals.txt`; the language too when a set is collected in more than one). The CSV stays one file. |
 | `--set NAME` | Only include this set, by name or TCGdex set id (repeatable). |
 | `--additionals-only` | Only list reverse holo prints (MEGA Dream ex: Additionals); see below. |
-| `--exclude-additionals` | Leave out reverse holo prints (MEGA Dream ex: Additionals). |
+| `--exclude-additionals` | Leave out reverse holo prints (MEGA Dream ex: Additionals). Reads `missing_cards.csv` by default, so a card you own in any print (say only its Energy reverse) is left out too. |
 | `--max-price AMOUNT` / `--min-price AMOUNT` | Leave out cards priced above / below this. |
 | `--price FIELD` | Price-guide figure the filters use: `trend` (default, falls back to `low` when a card has none), `low`, `avg`, `avg7` or `avg30`. |
 | `--ordered FILE` | Cards already ordered, left out of the list (default `ordered.txt` in `~/PokemonData`, if it exists; see below). |

@@ -270,6 +270,23 @@ class TestMain(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.run_main("--exclude-additionals", "--additionals-only")
 
+    def test_exclude_additionals_reads_missing_cards(self):
+        with tempfile.TemporaryDirectory() as d:
+            prints, cards = os.path.join(d, "missing_prints.json"), os.path.join(d, "missing.json")
+            for path, data in ((prints, MISSING_PRINTS), (cards, MISSING)):
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+            out = os.path.join(d, "wants.txt")
+            with patch.object(wants_list, "DEFAULT_MISSING_PRINTS", prints), \
+                    patch.object(wants_list, "DEFAULT_MISSING", cards), \
+                    redirect_stdout(io.StringIO()):
+                wants_list.main(["--out", out, "--no-cache", "--exclude-additionals",
+                                 "--ordered", os.path.join(d, "none.txt")])
+            with open(out, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        self.assertNotIn("1 Psyduck Damp Ram (MEGA Dream ex)", lines)
+        self.assertIn(f"1 Pikachu Thunder Jolt {MD}", lines)
+
     def test_ordering_one_print_leaves_the_others(self):
         with tempfile.TemporaryDirectory() as d:
             ordered = os.path.join(d, "ordered.txt")
