@@ -29,8 +29,19 @@ confidently, write the card as the email names it in place of the id, with
 its set and number, so it's still recorded.
 
 If an email cancels or refunds an order already in ordered.txt, put "# cancelled "
-at the start of that order's lines. Otherwise only add lines; never change or
-remove existing ones, and leave ordered_arrived.txt alone.
+at the start of that order's lines. A refund can be for only some of an
+order's cards (a seller who turned out not to have one, say): then cancel just
+those cards' lines, and add " (refunded <date of the refund email>)" to the
+end of each. If the refund email names the cards, use those. If it only gives
+an amount, as Cardmarket's do ("Amount: 3,70 GBP (4,50 EUR)"), compare it with
+the card prices in the order's confirmation email: Cardmarket refunds in
+euros, so the pounds can be off by a few percent (a 3,95 GBP card refunded
+as 3,70 GBP). A refund near the order's total is the whole order. Cancel a
+card only when one card, or one set of cards, clearly fits the amount; if
+it's unclear which, change nothing and list the refund in your summary so
+it can be marked by hand. Skip refunds whose lines are already cancelled.
+Otherwise only add lines; never change or remove existing ones, and leave
+ordered_arrived.txt alone.
 
-Finish with a short summary: orders added, cards added, and any card you
-couldn't identify.
+Finish with a short summary: orders added, cards added, cards cancelled, any
+card you couldn't identify, and any refund you couldn't match to its cards.
