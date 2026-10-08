@@ -122,9 +122,11 @@ TCGdex only has Japanese names for Japanese cards, so English names come
 from Cardmarket, which lists every card in English: each card's Cardmarket
 product id comes from TCGdex, and its name from Cardmarket's free daily
 product list (about 14 MB, downloaded once per run), plus one TCGdex request
-per missing card. Cards TCGdex hasn't linked to a Cardmarket product yet,
-usually from very new sets, are left blank. `--no-english-names` skips all of
-this.
+per missing card. Names found are kept in `~/PokemonData/.english_names.json`,
+so each card is only looked up once and later runs don't need TCGdex or
+Cardmarket for it. Cards TCGdex hasn't linked to a Cardmarket product yet,
+usually from very new sets, or that couldn't be fetched, are left blank and
+tried again next run. `--no-english-names` skips all of this.
 
 `--json FILE` writes the same data grouped by set, plus any sets it couldn't
 match, for other tools to consume:
