@@ -201,15 +201,16 @@ def build_rows(groups, pids, products, nonsingles, guide, field, rate):
     return rows
 
 
-def reverse_holos_only(groups):
+def reverse_holos_only(groups, keep_reverses=True):
     """groups (from load_missing) cut down to reverse holo prints -- the
-    cards Cardmarket keeps in MEGA Dream ex: Additionals -- dropping sets
-    left with none."""
+    cards Cardmarket keeps in MEGA Dream ex: Additionals -- or with
+    keep_reverses=False to everything but them, dropping sets left with
+    none."""
     kept = []
     for set_entry, cards in groups:
-        reverses = [c for c in cards if c.finish not in (None, FINISH_NORMAL)]
-        if reverses:
-            kept.append((set_entry, reverses))
+        chosen = [c for c in cards if (c.finish not in (None, FINISH_NORMAL)) == keep_reverses]
+        if chosen:
+            kept.append((set_entry, chosen))
     return kept
 
 
@@ -289,9 +290,12 @@ def build_arg_parser():
                         "(default: next to --out, with .csv in place of .txt).")
     p.add_argument("--set", dest="sets", action="append", default=[], metavar="NAME",
                    help="Only include this set, by name or TCGdex set id (repeatable).")
-    p.add_argument("--additionals-only", action="store_true",
-                   help="Only list reverse holo prints (MEGA Dream ex: Additionals), from "
-                        "missing_prints.csv.")
+    additionals = p.add_mutually_exclusive_group()
+    additionals.add_argument("--additionals-only", action="store_true",
+                             help="Only list reverse holo prints (MEGA Dream ex: Additionals), "
+                                  "from missing_prints.csv.")
+    additionals.add_argument("--exclude-additionals", action="store_true",
+                             help="Leave out reverse holo prints (MEGA Dream ex: Additionals).")
     p.add_argument("--max-price", type=Decimal, metavar="AMOUNT",
                    help="Leave out cards priced above this, in --currency (e.g. 20).")
     p.add_argument("--min-price", type=Decimal, metavar="AMOUNT",
@@ -329,6 +333,8 @@ def main(argv=None):
             sys.exit(f"No missing reverse holo prints in {args.missing_file}: they're listed in "
                      "missing_prints.csv when the RareCandy export says each MEGA Dream ex "
                      "card's finish (see missing_cards.py --headful).")
+    elif args.exclude_additionals:
+        groups = reverse_holos_only(groups, keep_reverses=False)
     if not groups:
         sys.exit("No missing cards in that file.")
     cards = [c for _, cards in groups for c in cards]

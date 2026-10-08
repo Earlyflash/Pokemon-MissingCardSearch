@@ -241,6 +241,13 @@ class TestMain(unittest.TestCase):
             self.run_main("--additionals-only")
         self.assertIn("No missing reverse holo prints", str(e.exception))
 
+    def test_exclude_additionals(self):
+        lines, rows, _ = self.run_main("--exclude-additionals", missing=MISSING_PRINTS)
+        self.assertEqual(lines, ["1 Psyduck Damp Ram (MEGA Dream ex)"])
+        self.assertEqual([r["Finish"] for r in rows], ["normal"])
+        with self.assertRaises(SystemExit):
+            self.run_main("--exclude-additionals", "--additionals-only")
+
     def test_ordering_one_print_leaves_the_others(self):
         with tempfile.TemporaryDirectory() as d:
             ordered = os.path.join(d, "ordered.txt")

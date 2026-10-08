@@ -403,6 +403,7 @@ Cardmarket's report of what it added.
 | `--csv-out FILE` | The per-card CSV (default: `--out` with `.csv`). |
 | `--set NAME` | Only include this set, by name or TCGdex set id (repeatable). |
 | `--additionals-only` | Only list reverse holo prints (MEGA Dream ex: Additionals); see below. |
+| `--exclude-additionals` | Leave out reverse holo prints (MEGA Dream ex: Additionals). |
 | `--max-price AMOUNT` / `--min-price AMOUNT` | Leave out cards priced above / below this. |
 | `--price FIELD` | Price-guide figure the filters use: `trend` (default, falls back to `low` when a card has none), `low`, `avg`, `avg7` or `avg30`. |
 | `--ordered FILE` | Cards already ordered, left out of the list (default `ordered.txt` in `~/PokemonData`, if it exists; see below). |
@@ -437,7 +438,8 @@ Their prices are Cardmarket's reverse holo figures (`trend-holo` and so on).
 These lines come from `missing_prints.csv`, which wants_list.py reads by
 default (falling back to `missing_cards.csv` if it isn't there). For a list
 of just that set, use `--set M2a --out ~/PokemonData/m2a_wants.txt`; for
-only the reverse holos, add `--additionals-only`.
+only the reverse holos, add `--additionals-only`; to leave them out, add
+`--exclude-additionals`.
 
 ## Cards on order (ordered.txt)
 
