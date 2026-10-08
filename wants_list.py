@@ -110,10 +110,17 @@ def versions(products):
 
 def deck_list_line_name(product, version=None, expansion=None):
     """Everything after the amount on a deck list line: flattened name and
-    attacks, then the version and expansion when known."""
+    attacks, then the version and expansion when known. A card whose name or
+    attacks hold the expansion's name keeps Cardmarket's brackets: flattened,
+    "Mega Rayquaza ex Roar of the Ruler Storm Emeralda (V.4) (Storm
+    Emeralda)" loses its version or expansion in the box, but "Mega Rayquaza
+    ex [Roar of the Ruler | Storm Emeralda] (V.4) (Storm Emeralda)" is added
+    right."""
     parts = [deck_list_name((product or {}).get("name"))]
     if not parts[0]:
         return None
+    if expansion and expansion.casefold() in parts[0].casefold():
+        parts[0] = " ".join(product["name"].split())
     if version:
         parts.append(f"(V.{version})")
     if expansion:

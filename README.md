@@ -392,7 +392,10 @@ Cardmarket's box takes one card per line as amount, name and attacks, then
 the version and expansion, sorted alphabetically
 (`1 Mega Absol ex Terminal Period Claw of Darkness (V.2) (Mega Evolution)`);
 trainers and energy need only the name. Without the expansion Cardmarket adds
-the card from any set, and without the version any print of it in the set. Each card is matched to its Cardmarket product through TCGdex and
+the card from any set, and without the version any print of it in the set. A card whose name or attacks
+contain its expansion's name keeps Cardmarket's brackets
+(`1 Mega Rayquaza ex [Roar of the Ruler | Storm Emeralda] (V.4) (Storm Emeralda)`),
+as flattened it loses its version or expansion in the box. Each card is matched to its Cardmarket product through TCGdex and
 the line is built from Cardmarket's own product name, so it matches what
 Cardmarket expects. It also writes a CSV next to the list with every missing
 card, its price and whether it made the list, so you can check it against

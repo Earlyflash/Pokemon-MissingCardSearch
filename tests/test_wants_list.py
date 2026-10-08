@@ -139,6 +139,13 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(wants_list.deck_list_line_name({"name": "Switch"}, None, "X"), "Switch (X)")
         self.assertIsNone(wants_list.deck_list_line_name(None, None, "X"))
 
+    def test_line_name_keeps_brackets_when_an_attack_is_the_expansion(self):
+        product = {"name": "Mega Rayquaza ex [Roar of the Ruler | Storm Emeralda]"}
+        self.assertEqual(wants_list.deck_list_line_name(product, 4, "Storm Emeralda"),
+                         "Mega Rayquaza ex [Roar of the Ruler | Storm Emeralda] (V.4) (Storm Emeralda)")
+        self.assertEqual(wants_list.deck_list_line_name(product, 4, "Mega Evolution"),
+                         "Mega Rayquaza ex Roar of the Ruler Storm Emeralda (V.4) (Mega Evolution)")
+
     def test_card_price_converts_and_falls_back_to_low(self):
         rate = Decimal("0.85")
         self.assertEqual(wants_list.card_price({"trend": 10, "low": 1}, "trend", rate), Decimal("8.50"))
