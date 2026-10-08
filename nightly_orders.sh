@@ -30,6 +30,6 @@ fi
         "WebFetch(domain:api.tcgdex.net)"
     status=$?
     [ "$status" -eq 124 ] && echo "Stopped after ${ORDER_EMAIL_TIMEOUT:-20m}."
-    # Keep it in order date, shop and seller order, new orders included.
+    # Keep it in order date, shop and order number order, new orders included.
     python3 "$REPO/ordered.py" sort "$DATA_DIR/ordered.txt"
 } >> "$LOG" 2>&1

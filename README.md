@@ -470,7 +470,7 @@ when its order is cancelled or refunded. For marketplace orders, a
 orders from a shop itself).
 
 `python ordered.py sort ~/PokemonData/ordered.txt` sorts the file by order
-date, then shop, then seller, so each order's cards sit together; cancelled
+date, then shop, then order number, so each order's cards sit together; cancelled
 lines sort with their order and other comments stay at the top.
 
 Each time missing_cards.py runs, any card id line whose card is now in the

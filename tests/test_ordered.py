@@ -99,7 +99,7 @@ class PruneArrivedTests(unittest.TestCase):
 
 
 class SortFileTests(unittest.TestCase):
-    def test_sorts_by_date_shop_seller(self):
+    def test_sorts_by_date_shop_order_number(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "ordered.txt")
             with open(path, "w", encoding="utf-8") as f:
@@ -107,6 +107,7 @@ class SortFileTests(unittest.TestCase):
                         "M6a-109 | 2026-10-06 | Japan2UK | 182506 | Toxtricity\n"
                         "M3-096 | 2026-10-03 | Cardmarket | 2 | seller zed | Mega Clefable ex\n"
                         "M6-097 | 2026-10-03 | Cardmarket | 2 | seller zed | Adventuring Lantern\n"
+                        "M2-001 | 2026-10-03 | Cardmarket | 10 | seller aaa | Oddish\n"
                         "\n"
                         "# cancelled M3-108 | 2026-10-03 | Cardmarket | 1 | seller Kard | Jacinthe\n"
                         "M5-082 | 2026-10-03 | Cardmarket | 3 | seller alpha | Fomantis\n"
@@ -115,8 +116,8 @@ class SortFileTests(unittest.TestCase):
             ordered.sort_file(path)
             with open(path, encoding="utf-8") as f:
                 cards = [line.split(" | ")[0] for line in f.read().splitlines()]
-        self.assertEqual(cards, ["# card id", "S10b-028", "M5-082", "# cancelled M3-108", "M1S-080",
-                                 "M3-096", "M6-097", "M6a-109"])
+        self.assertEqual(cards, ["# card id", "S10b-028", "# cancelled M3-108", "M1S-080",
+                                 "M3-096", "M6-097", "M5-082", "M2-001", "M6a-109"])
 
 
 if __name__ == "__main__":

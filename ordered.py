@@ -11,8 +11,7 @@ task, say), e.g.
 
     me01-161 | 2026-09-28 | Cardmarket | 1234567890 | seller KardKafe | Mega Absol ex 161/132
 
-A "seller <name>" field names the seller of a marketplace order, and
-sort_file sorts by it after the date and shop.
+A "seller <name>" field names the seller of a marketplace order.
 
 Blank lines and lines starting with # are skipped. price_search.py and
 wants_list.py read it so ordered cards aren't bought twice, and
@@ -142,20 +141,20 @@ def _write_lines(path, lines):
 
 
 def _order_key(line):
-    """How sort_file orders a line: by order date, then shop, then seller
-    (a "seller <name>" field), then order number. A cancelled order's line
-    ("# cancelled me01-161 | ...") sorts as the order it was. None for
-    blank lines and other comments."""
+    """How sort_file orders a line: by order date, then shop, then order
+    number. A cancelled order's line ("# cancelled me01-161 | ...") sorts as
+    the order it was. None for blank lines and other comments."""
     body = re.sub(r"^#\s*cancelled\s+", "", line.strip(), flags=re.IGNORECASE)
     if not body or body.startswith("#"):
         return None
     fields = [f.strip() for f in body.split(FIELD_SEP.strip())] + ["", "", ""]
-    seller = next((f[len("seller "):] for f in fields[3:] if f.lower().startswith("seller ")), "")
-    return fields[1], fields[2].casefold(), seller.casefold(), fields[3]
+    # Numbers in the order number compare as numbers: order 9 before 10.
+    number = [int(t) if t.isdigit() else t.casefold() for t in re.split(r"(\d+)", fields[3])]
+    return fields[1], fields[2].casefold(), number
 
 
 def sort_file(path):
-    """Sort ordered.txt by order date, shop, seller and order number, so one
+    """Sort ordered.txt by order date, shop and order number, so one
     order's cards sit together. Comments other than cancelled orders stay at
     the top in their own order; lines of one order keep theirs."""
     lines = [line.rstrip("\n") for line in _read_lines(path)]
