@@ -30,6 +30,17 @@ class ParseLineTests(unittest.TestCase):
         self.assertEqual(ordered.parse_line("Blaine's Quiz #1 (Gym Heroes)")[2],
                          "blaine's quiz #1 (gym heroes)")
 
+    def test_read_ordered_shops(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "ordered.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("me01-161 | 2026-09-28 | Cardmarket | 1\nme01-161 | 2026-09-29 | Deckd | 2\n"
+                        "M2a-032 energy | 2026-10-01 | Cardmarket\nme01-001\n# me01-002 | x | Gone\n"
+                        "1 Switch (Black Bolt) | 2026-09-28 | Cardmarket\n")
+            self.assertEqual(ordered.read_ordered_shops(path),
+                             {"me01-161": ["Cardmarket", "Deckd"], "m2a-032 energy": ["Cardmarket"],
+                              "me01-001": []})
+
     def test_read_ordered_ignores_notes(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "ordered.txt")

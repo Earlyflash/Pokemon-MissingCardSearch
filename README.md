@@ -122,9 +122,11 @@ TCGdex only has Japanese names for Japanese cards, so English names come
 from Cardmarket, which lists every card in English: each card's Cardmarket
 product id comes from TCGdex, and its name from Cardmarket's free daily
 product list (about 14 MB, downloaded once per run), plus one TCGdex request
-per missing card. Cards TCGdex hasn't linked to a Cardmarket product yet,
-usually from very new sets, are left blank. `--no-english-names` skips all of
-this.
+per missing card. Names found are kept in `~/PokemonData/.english_names.json`,
+so each card is only looked up once and later runs don't need TCGdex or
+Cardmarket for it. Cards TCGdex hasn't linked to a Cardmarket product yet,
+usually from very new sets, or that couldn't be fetched, are left blank and
+tried again next run. `--no-english-names` skips all of this.
 
 `--json FILE` writes the same data grouped by set, plus any sets it couldn't
 match, for other tools to consume:
@@ -221,7 +223,9 @@ by set, and one column per marketplace. Sets come in set number order (M1L, M1S,
 M2a...); a menu at the top re-sorts them by fewest cards missing or cheapest to
 complete (sets with cards nobody has for sale go last). Cards listed in
 `ordered.txt` (see [Cards on order](#cards-on-order-orderedtxt)) are shaded and tagged
-"ordered", and can be hidden with a tick box, so they aren't bought twice. Cards are named in English where
+"ordered", and can be hidden with a tick box, so they aren't bought twice. The
+shop each was ordered from (the third field of its `ordered.txt` line) has its
+cell ringed; "Deckd" is enough to find DeckdHQ. Cards are named in English where
 missing_cards.py found an English name, with the printed name underneath, and
 the marketplace names stay at the top of the screen as you scroll. Each cell is that marketplace's
 cheapest copy (with its condition or grade, and how many more copies it has),

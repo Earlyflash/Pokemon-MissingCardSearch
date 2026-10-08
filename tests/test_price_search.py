@@ -560,6 +560,20 @@ class HtmlTableTests(unittest.TestCase):
         self.assertIn('<tr class="sold ordered">', self.html)
         self.assertIn("2 card(s) already ordered", self.html)
 
+    def test_shop_a_card_was_ordered_from_is_ringed(self):
+        with tempfile.TemporaryDirectory() as d:
+            ordered = os.path.join(d, "ordered.txt")
+            with open(ordered, "w", encoding="utf-8") as f:
+                f.write("M2a-002 | 2026-10-01 | Japan Shop | 1 | Ivysaur\n"
+                        "M2a-003 | 2026-10-01 | euro | 2 | Mega Venusaur ex\n")
+            t = self.table({"jpshop": JapanShop(), "euroshop": EuroShop()}, ordered=ordered)
+        (eu_cls, _, _), (jp_cls, _, _) = t.rows["#002"]
+        self.assertEqual((eu_cls, jp_cls), ("price best", "price ordered-from"))
+        # Euro Shop has no copy of #003 left, so its empty cell just says "ordered".
+        self.assertEqual(t.rows["#003"][0], ("price ordered-from", None, "ordered"))
+        self.assertEqual(t.rows["#003"][1][0], "price best")
+        self.assertIn('title="Ordered from Japan Shop"', self.html)
+
     def test_no_ordered_file_tags_nothing(self):
         t = self.table({"euroshop": EuroShop()}, ordered=os.path.join(tempfile.gettempdir(), "none.txt"))
         self.assertNotIn("ordered", "".join(t.names.values()))

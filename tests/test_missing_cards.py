@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 import sys
 import tempfile
@@ -91,6 +92,11 @@ def setUpModule():
     # folder the tests' --out files share (an absolute name wins in join).
     patcher = patch.object(missing_cards, "PRINTS_NAME",
                            os.path.join(_PRINTS_DIR.name, "missing_prints.csv"))
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+    # Nor the real English names cache in ~/PokemonData.
+    patcher = patch.object(missing_cards, "DEFAULT_NAMES_CACHE",
+                           os.path.join(_PRINTS_DIR.name, "english_names.json"))
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)
     unittest.addModuleCleanup(_PRINTS_DIR.cleanup)
@@ -516,6 +522,27 @@ class MainTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             missing_cards.add_english_names(results)
         self.assertIsNone(results[0]["missing"][0]["name_en"])
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_names_found_are_cached_and_not_looked_up_again(self, mock_fetch):
+        def cards():
+            return [{"tcgdex_lang": "ja", "missing": [{"id": "M2a-001", "name": "a"},
+                                                     {"id": "M2a-002", "name": "フシギソウ"}]}]
+        with tempfile.TemporaryDirectory() as d:
+            cache = os.path.join(d, "names.json")
+            with redirect_stdout(io.StringIO()):
+                missing_cards.add_english_names(cards(), cache)
+            with open(cache, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), {"ja/M2a-002": "Ivysaur"})
+            mock_fetch.reset_mock()
+            results = cards()
+            with redirect_stdout(io.StringIO()):
+                missing_cards.add_english_names(results, cache)
+        self.assertEqual([c["name_en"] for c in results[0]["missing"]], [None, "Ivysaur"])
+        # Only the card with no name yet is tried again.
+        cards_fetched = [c.args[0].rsplit("/", 1)[1] for c in mock_fetch.call_args_list
+                         if "/cards/" in c.args[0]]
+        self.assertEqual(cards_fetched, ["M2a-001"])
 
     def test_cardmarket_name_cleanup(self):
         clean = missing_cards._cardmarket_base_name

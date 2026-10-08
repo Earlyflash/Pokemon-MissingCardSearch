@@ -40,6 +40,8 @@ EXPORTER_DIR = os.path.join(SCRIPT_DIR, "vendor", "RareCandyExporter")
 DEFAULT_SET_MAP = os.path.join(SCRIPT_DIR, "set_map.json")
 DEFAULT_ORDERED = data_path("ordered.txt")
 DEFAULT_SESSION = data_path(".rarecandy-session.json")
+# English names already found, so each card is only looked up once.
+DEFAULT_NAMES_CACHE = data_path(".english_names.json")
 
 if not os.path.isfile(os.path.join(BINDER_TOOL_DIR, "binder_cover.py")):
     sys.exit("vendor/pokemon-binder-cover-tool is empty -- run "
@@ -262,11 +264,26 @@ def _cardmarket_base_name(name):
     return " ".join(re.sub(r"\s*\[[^\]]*\]", "", name or "").split())
 
 
-def add_english_names(results):
+def _read_names_cache(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            names = json.load(f)
+        return names if isinstance(names, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def add_english_names(results, cache_path=None):
     """Set c["name_en"] on every missing card. English-dataset cards already
     have it; for the rest it's looked up via each card's Cardmarket product
     (one TCGdex request per card, run concurrently, plus Cardmarket's product
-    list once). Cards it can't resolve are left with name_en None."""
+    list once). Cards it can't resolve are left with name_en None.
+
+    A card's name doesn't change, so names found are kept in `cache_path`
+    (JSON, {"<lang>/<card id>": name}) and only cards not in it are looked
+    up. Cards not found aren't kept, so they're tried again next run (a
+    network hiccup, or a set too new for TCGdex to link to Cardmarket)."""
+    cache = _read_names_cache(cache_path) if cache_path else {}
     todo, prints = [], {}
     for r in results:
         for c in [*r["missing"], *r.get("prints", ())]:
@@ -276,6 +293,10 @@ def add_english_names(results):
                 c["name_en"] = None
                 # A card missing in several finishes is looked up once.
                 key = (r["tcgdex_lang"], c.get("id"))
+                cached = cache.get("/".join(key))
+                if cached:
+                    c["name_en"] = cached
+                    continue
                 if key not in prints:
                     todo.append((r["tcgdex_lang"], c))
                 prints.setdefault(key, []).append(c)
@@ -300,10 +321,18 @@ def add_english_names(results):
         for key, name_en in pool.map(lookup, todo):
             for c in prints[key]:
                 c["name_en"] = name_en
+            if name_en:
+                cache["/".join(key)] = name_en
     found = sum(1 for _, c in todo if c["name_en"])
     if found < len(todo):
-        print(f"[names] Found {found}/{len(todo)}; the rest have no Cardmarket product "
-              "on TCGdex yet.")
+        print(f"[names] Found {found}/{len(todo)}; the rest couldn't be fetched from TCGdex or "
+              "have no Cardmarket product there yet, and will be tried again next run.")
+    if cache_path and found:
+        ensure_parent(cache_path)
+        tmp = f"{cache_path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=0, sort_keys=True)
+        os.replace(tmp, cache_path)
 
 
 # ------------------------------------------------------------- diffing --
@@ -631,7 +660,7 @@ def main(argv=None):
         prune_ordered(results, args.ordered, args.arrived)
     results, below = apply_threshold(results, args.min_complete)
     if args.english_names:
-        add_english_names(results)
+        add_english_names(results, DEFAULT_NAMES_CACHE)
     print_report(results, unmatched, below, args.min_complete)
     ensure_parent(args.out)
     write_csv(results, args.out)
