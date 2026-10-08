@@ -98,5 +98,26 @@ class PruneArrivedTests(unittest.TestCase):
             self.assertEqual(os.listdir(d), [])
 
 
+class SortFileTests(unittest.TestCase):
+    def test_sorts_by_date_shop_seller(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "ordered.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("# card id | date | shop | order | seller | card\n"
+                        "M6a-109 | 2026-10-06 | Japan2UK | 182506 | Toxtricity\n"
+                        "M3-096 | 2026-10-03 | Cardmarket | 2 | seller zed | Mega Clefable ex\n"
+                        "M6-097 | 2026-10-03 | Cardmarket | 2 | seller zed | Adventuring Lantern\n"
+                        "\n"
+                        "# cancelled M3-108 | 2026-10-03 | Cardmarket | 1 | seller Kard | Jacinthe\n"
+                        "M5-082 | 2026-10-03 | Cardmarket | 3 | seller alpha | Fomantis\n"
+                        "S10b-028 | 2026-09-30 | Radam's | 00326 | Pikachu\n"
+                        "M1S-080 | 2026-10-03 | Cardmarket | 1 | seller Kard | Mega Kangaskhan ex\n")
+            ordered.sort_file(path)
+            with open(path, encoding="utf-8") as f:
+                cards = [line.split(" | ")[0] for line in f.read().splitlines()]
+        self.assertEqual(cards, ["# card id", "S10b-028", "M5-082", "# cancelled M3-108", "M1S-080",
+                                 "M3-096", "M6-097", "M6a-109"])
+
+
 if __name__ == "__main__":
     unittest.main()

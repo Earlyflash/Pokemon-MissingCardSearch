@@ -125,10 +125,45 @@ def prune_arrived(path, checked_ids, missing_ids, arrived_path=None, today=None)
     date = (today or datetime.date.today()).isoformat()
     with open(arrived_path, "a", encoding="utf-8") as f:
         f.writelines(f"{line}{FIELD_SEP}arrived {date}\n" for line in arrived)
+    _write_lines(path, keep)
+    return arrived, names
+
+
+def _write_lines(path, lines):
     # Written to a temp file and swapped in, so a reader (or an email task
     # appending at the same moment) never sees a half-written file.
     tmp = f"{path}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        f.writelines(f"{line}\n" for line in keep)
+        f.writelines(f"{line}\n" for line in lines)
     os.replace(tmp, path)
-    return arrived, names
+
+
+def _order_key(line):
+    """How sort_file orders a line: by order date, then shop, then seller
+    (a "seller <name>" field), then order number. A cancelled order's line
+    ("# cancelled me01-161 | ...") sorts as the order it was. None for
+    blank lines and other comments."""
+    body = re.sub(r"^#\s*cancelled\s+", "", line.strip(), flags=re.IGNORECASE)
+    if not body or body.startswith("#"):
+        return None
+    fields = [f.strip() for f in body.split(FIELD_SEP.strip())] + ["", "", ""]
+    seller = next((f[len("seller "):] for f in fields[3:] if f.lower().startswith("seller ")), "")
+    return fields[1], fields[2].casefold(), seller.casefold(), fields[3]
+
+
+def sort_file(path):
+    """Sort ordered.txt by order date, shop, seller and order number, so one
+    order's cards sit together. Comments other than cancelled orders stay at
+    the top in their own order; lines of one order keep theirs."""
+    lines = [line.rstrip("\n") for line in _read_lines(path)]
+    header = [line for line in lines if line.strip() and _order_key(line) is None]
+    orders = sorted((line for line in lines if _order_key(line) is not None), key=_order_key)
+    if header + orders != lines:
+        _write_lines(path, header + orders)
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 3 or sys.argv[1] != "sort":
+        sys.exit("Usage: python ordered.py sort ORDERED_FILE")
+    sort_file(sys.argv[2])
