@@ -142,10 +142,27 @@ def normalize_number(raw):
     return re.sub(r"\d+", lambda m: str(int(m.group())), s)
 
 
+# RareCandy gives basic Energy no card number ("Basic Fire Energy" with a
+# blank #), where TCGdex numbers them by type in sets that list them (M6a's
+# FIR, GRA, ...), so the name stands in for the number.
+BASIC_ENERGY_NUMBERS = {
+    "grass": "GRA", "fire": "FIR", "water": "WAT", "lightning": "LIG", "psychic": "PSY",
+    "fighting": "FIG", "darkness": "DAR", "metal": "MET",
+}
+
+
+def basic_energy_number(product_name):
+    """TCGdex's number for a basic Energy RareCandy names "Basic <Type> Energy",
+    or "" for any other card."""
+    m = re.fullmatch(r"basic (\w+) energy", (product_name or "").strip().lower())
+    return BASIC_ENERGY_NUMBERS.get(m.group(1), "") if m else ""
+
+
 def read_owned(csv_path, finishes=None):
     """Read a RareCandyExporter CSV. Returns {(set_name, language): set of
     normalized card numbers owned}. Rows with no set name or card number
-    (untracked cards) can't be matched to a set list, so they're skipped.
+    (untracked cards) can't be matched to a set list, so they're skipped,
+    except basic Energy, numbered by type (see BASIC_ENERGY_NUMBERS).
 
     Pass a dict as `finishes` to also get {(set_name, language): {number:
     set of finish keys}} in it, for sets where the export gives any row a
@@ -156,7 +173,8 @@ def read_owned(csv_path, finishes=None):
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             set_name = (row.get("Set Name") or "").strip()
-            number = normalize_number(row.get("Card Number"))
+            number = (normalize_number(row.get("Card Number"))
+                      or basic_energy_number(row.get("Product Name")))
             if not set_name or not number:
                 skipped += 1
                 continue

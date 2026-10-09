@@ -134,6 +134,17 @@ class ReadOwnedTests(unittest.TestCase):
             ("Mega Evolution", "English"): {"1"},
         })
 
+    def test_basic_energy_with_no_number_is_numbered_by_type(self):
+        path = write_export([
+            ("Basic Fire Energy", "30th Celebration", "", "Japanese", 1),
+            ("Basic Darkness Energy", "30th Celebration", "", "Japanese", 1),
+            ("Call Energy", "Moonlit Pursuit", "", "Japanese", 1),
+        ])
+        with redirect_stdout(io.StringIO()):
+            owned = missing_cards.read_owned(path)
+        os.unlink(path)
+        self.assertEqual(owned, {("30th Celebration", "Japanese"): {"FIR", "DAR"}})
+
 
 class ResolveSetIdTests(unittest.TestCase):
     def setUp(self):
