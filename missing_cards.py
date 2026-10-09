@@ -617,7 +617,7 @@ def build_arg_parser():
                         "(repeatable), on top of set_map.json.")
     p.add_argument("--set-map", default=DEFAULT_SET_MAP,
                    help="Set name -> TCGdex code overrides file (default: set_map.json).")
-    p.add_argument("--min-complete", type=float, default=75, metavar="PERCENT",
+    p.add_argument("--min-complete", type=float, default=70, metavar="PERCENT",
                    help="Only list sets you already own at least this percentage of "
                         "(default: %(default)g). 0 lists every set you own a card from.")
     p.add_argument("--out", default=data_path("missing_cards.csv"),

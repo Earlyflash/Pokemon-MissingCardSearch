@@ -444,7 +444,7 @@ class MainTests(unittest.TestCase):
 
     @patch("binder_cover._fetch_json", side_effect=fake_fetch)
     def test_default_threshold_leaves_out_incomplete_sets(self, _):
-        # Own 2/3 of M2a (67%) and 3/3 would be complete; the default 75%
+        # Own 2/3 of M2a (67%) and 3/3 would be complete; the default 70%
         # threshold keeps only sets at or above it.
         export = write_export([
             ("A", "MEGA Dream ex", "001", "Japanese", 1),
@@ -465,12 +465,12 @@ class MainTests(unittest.TestCase):
         finally:
             for p in (export, out, out_json):
                 os.unlink(p)
-        self.assertEqual(data["min_complete"], 75)
+        self.assertEqual(data["min_complete"], 70)
         self.assertEqual([s["set_id"] for s in data["sets"]], ["me01"])
         self.assertEqual(data["sets"][0]["missing"], [])
         self.assertEqual([(b["set_id"], b["percent_complete"]) for b in data["below_threshold"]],
                          [("M2a", 66.7)])
-        self.assertIn("Left out 1 set(s) under 75% complete: MEGA Dream ex (67%)",
+        self.assertIn("Left out 1 set(s) under 70% complete: MEGA Dream ex (67%)",
                       stdout.getvalue())
 
     def test_threshold_boundary_is_inclusive(self):
