@@ -94,6 +94,10 @@ def setUpModule():
                            os.path.join(_PRINTS_DIR.name, "missing_prints.csv"))
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)
+    patcher = patch.object(missing_cards, "HTML_NAME",
+                           os.path.join(_PRINTS_DIR.name, "missing_cards.html"))
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
     # Nor the real English names cache in ~/PokemonData.
     patcher = patch.object(missing_cards, "DEFAULT_NAMES_CACHE",
                            os.path.join(_PRINTS_DIR.name, "english_names.json"))
@@ -391,6 +395,48 @@ class MainTests(unittest.TestCase):
         self.assertEqual(data["unmatched"],
                          [{"set_name": "Mystery", "language": "English",
                            "reason": "no TCGdex set found"}])
+
+    @patch("binder_cover._fetch_json", side_effect=fake_fetch)
+    def test_html_overview(self, _):
+        export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1),
+                               ("Ivysaur", "Mega Evolution", "002", "English", 1),
+                               ("Pikachu", "Mega Evolution", "TG01", "English", 1),
+                               ("X", "Mystery", "5", "English", 1)])
+        out = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
+        out_html = tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
+        try:
+            with redirect_stdout(io.StringIO()):
+                missing_cards.main(["--csv", export, "--out", out, "--html", out_html,
+                                    "--min-complete", "50"])
+            with open(out_html, encoding="utf-8") as f:
+                page = f.read()
+        finally:
+            for p in (export, out, out_html):
+                os.unlink(p)
+        # me01 (2/3) is listed with its missing card; M2a (1/3) is under 50%.
+        self.assertIn("Mega Evolution", page)
+        self.assertIn("me01 · 2/3 owned", page)
+        self.assertIn('<span class="chip">1 missing</span>', page)
+        self.assertIn("Started, under 50% complete (1)", page)
+        # English (2 owned) comes before Japanese (1 owned).
+        self.assertLess(page.index("<h2>English</h2>"), page.index("<h2>Japanese</h2>"))
+        self.assertIn("M2a · 1/3 owned", page)
+        self.assertIn("Mystery (English): no TCGdex set found", page)
+        # Pictures wait for the checkbox: data-src, not src.
+        self.assertIn('id="pics"', page)
+        self.assertNotIn("<img src=", page)
+
+    def test_card_images(self):
+        ja = {"tcgdex_lang": "ja", "set_id": "M2a"}
+        en = {"tcgdex_lang": "en", "set_id": "me01"}
+        self.assertEqual(missing_cards.card_images(ja, {"localId": "010"}),
+                         ("https://images.scrydex.com/pokemon/m2a_ja-10/medium",
+                          "https://images.scrydex.com/pokemon/m2a_ja-10/large"))
+        self.assertEqual(missing_cards.card_images(en, {"localId": "001",
+                                                        "image": "https://a/en/me/me01/001"}),
+                         ("https://a/en/me/me01/001/low.webp",
+                          "https://a/en/me/me01/001/high.webp"))
+        self.assertEqual(missing_cards.card_images(en, {"localId": "001"}), (None, None))
 
     @patch("binder_cover._fetch_json", side_effect=fake_fetch)
     def test_arrived_orders_move_out_of_ordered_txt(self, _):

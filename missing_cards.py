@@ -25,6 +25,8 @@ Run `python missing_cards.py --help` for the full flag list.
 import argparse
 import concurrent.futures
 import csv
+import datetime
+import html
 import json
 import os
 import re
@@ -83,6 +85,12 @@ LANGUAGE_TO_TCGDEX = {
 OUT_COLUMNS = ["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name", "TCGdex Card ID",
                "English Name"]
 PRINTS_NAME = "missing_prints.csv"
+HTML_NAME = "missing_cards.html"
+
+# TCGdex has pictures for English cards but none for Japanese ones, which
+# scrydex (where RareCandy's own card pictures come from) has under
+# "<set id>_ja-<number>".
+SCRYDEX_IMAGES = "https://images.scrydex.com/pokemon"
 
 # Cardmarket's public product list names every product in English, Japanese
 # prints included, and TCGdex's card records carry the Cardmarket product id.
@@ -594,6 +602,324 @@ def write_json(results, unmatched, path, below=(), min_complete=0):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def card_images(r, c):
+    """(small, large) picture URLs for a missing card, or (None, None):
+    TCGdex's own where it has one, else scrydex's for Japanese cards."""
+    if c.get("image"):
+        return f"{c['image']}/low.webp", f"{c['image']}/high.webp"
+    if r["tcgdex_lang"] == "ja" and c.get("localId"):
+        base = (f"{SCRYDEX_IMAGES}/{r['set_id'].lower()}_ja-"
+                f"{normalize_number(c['localId']).lower()}")
+        return f"{base}/medium", f"{base}/large"
+    return None, None
+
+
+HTML_STYLE = """
+:root {
+  --bg: #f4f3ef; --panel: #ffffff; --text: #1c1c1e; --muted: #6e6e73; --line: #e4e2dc;
+  --track: #ebe9e3; --shadow: 0 1px 2px rgba(20, 20, 30, .06), 0 4px 14px rgba(20, 20, 30, .06);
+  --lift: 0 2px 4px rgba(20, 20, 30, .08), 0 12px 28px rgba(20, 20, 30, .12);
+  --t0: #d1495b; --t1: #df7a22; --t2: #c79a00; --t3: #6a9f1e; --t4: #1f9d63; --t5: #7c5cff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111113; --panel: #1b1b1e; --text: #f2f2f4; --muted: #9d9da6; --line: #2c2c31;
+    --track: #2a2a2f; --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .25);
+    --lift: 0 2px 4px rgba(0, 0, 0, .5), 0 14px 30px rgba(0, 0, 0, .45);
+    --t0: #f07a8a; --t1: #f5a050; --t2: #e8c547; --t3: #9fd04a; --t4: #3fcf8e; --t5: #a58bff;
+  }
+}
+.t0 { --tier: var(--t0); } .t1 { --tier: var(--t1); } .t2 { --tier: var(--t2); }
+.t3 { --tier: var(--t3); } .t4 { --tier: var(--t4); } .t5 { --tier: var(--t5); }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
+       font: 15px/1.45 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 36px 16px 64px; }
+header.top { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; margin-bottom: 24px; }
+header.top .intro { flex: 1 1 260px; }
+h1 { font-size: 32px; letter-spacing: -0.02em; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 10px; }
+.stat { background: var(--panel); border-radius: 14px; padding: 12px 16px; box-shadow: var(--shadow);
+        min-width: 120px; }
+.stat b { display: block; font-size: 24px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; }
+.stat.overall b { color: var(--tier); }
+.controls { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: center; margin-bottom: 8px;
+            padding: 10px 14px; background: var(--panel); border-radius: 14px; box-shadow: var(--shadow); }
+.switch { display: inline-flex; gap: 10px; align-items: center; cursor: pointer; user-select: none; }
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch i { width: 38px; height: 22px; border-radius: 11px; background: var(--track); position: relative;
+            transition: background .2s; flex: none; }
+.switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+                   border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+                   transition: transform .2s; }
+.switch input:checked + i { background: var(--t4); }
+.switch input:checked + i::after { transform: translateX(16px); }
+.switch input:focus-visible + i { outline: 2px solid var(--t4); outline-offset: 2px; }
+.controls select { font: inherit; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line);
+                   background: var(--bg); color: var(--text); cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-left: auto; color: var(--muted);
+          font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend span::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--tier); }
+section { margin-top: 40px; }
+h2 { font-size: 24px; letter-spacing: -0.01em; margin: 0; }
+.lang-sub { color: var(--muted); margin: 2px 0 16px; }
+h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+     margin: 26px 0 12px; font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 12px; }
+.tile { font: inherit; color: inherit; text-align: left; width: 100%;
+        display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: center;
+        padding: 14px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--tier) 22%, var(--line));
+        background: linear-gradient(150deg, color-mix(in srgb, var(--tier) 13%, var(--panel)), var(--panel) 65%);
+        box-shadow: var(--shadow); transition: transform .15s ease, box-shadow .15s ease, border-color .15s; }
+button.tile { cursor: pointer; }
+button.tile:hover { transform: translateY(-2px); box-shadow: var(--lift); }
+button.tile:focus-visible { outline: 2px solid var(--tier); outline-offset: 2px; }
+.tile[aria-expanded="true"] { border-color: var(--tier);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--tier) 30%, transparent), var(--lift); }
+.ring { position: relative; width: 76px; height: 76px; grid-row: span 3; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); display: block; }
+.ring circle { fill: none; stroke-width: 7; }
+.ring .bg { stroke: var(--track); }
+.ring .fg { stroke: var(--tier); stroke-linecap: round; }
+.ring b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          font-size: 21px;
+          letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.ring b small { font-size: 12px; font-weight: 600; margin-left: 1px; }
+.tname { font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; align-self: end; }
+.meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.chip { justify-self: start; align-self: start; font-size: 12px; font-weight: 600; padding: 2px 9px;
+        border-radius: 999px; color: var(--tier); background: color-mix(in srgb, var(--tier) 14%, transparent); }
+.small .ring { width: 60px; height: 60px; }
+.small .ring b { font-size: 16px; }
+.hint { color: var(--muted); font-size: 14px; margin: 14px 2px 0; }
+section.has-open .hint { display: none; }
+.panel { margin-top: 16px; background: var(--panel); border-radius: 18px;
+         box-shadow: var(--lift); border-top: 4px solid var(--tier); overflow: hidden;
+         animation: rise .2s ease; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.panel[hidden] { display: none; }
+.phead { display: flex; align-items: center; gap: 14px; padding: 16px 18px;
+         border-bottom: 1px solid var(--line);
+         background: linear-gradient(90deg, color-mix(in srgb, var(--tier) 10%, var(--panel)), var(--panel)); }
+.phead .ring { width: 56px; height: 56px; }
+.phead .ring b { font-size: 15px; }
+.phead div { flex: 1; min-width: 0; }
+.phead h4 { margin: 0; font-size: 19px; letter-spacing: -0.01em; }
+.phead p { margin: 0; color: var(--muted); font-size: 14px; }
+.close { font: inherit; font-size: 22px; line-height: 1; width: 36px; height: 36px; border-radius: 50%;
+         border: 0; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+.close:hover { background: var(--track); color: var(--text); }
+.cards { list-style: none; margin: 0; padding: 14px 18px 18px; display: grid; gap: 4px 20px;
+         grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.card { display: flex; gap: 8px; align-items: baseline; min-width: 0; padding: 3px 0; }
+.card .num { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 3.6em; font-size: 13px; }
+.card .en { color: var(--muted); }
+.card a { display: none; }
+.pics .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 16px; }
+.pics .card { flex-direction: column; gap: 1px; font-size: 13px; padding: 0; }
+.pics .card a { display: block; width: 100%; aspect-ratio: 63 / 88; border-radius: 8px; margin-bottom: 6px;
+                background: var(--track); overflow: hidden; box-shadow: var(--shadow);
+                transition: transform .15s ease, box-shadow .15s ease; }
+.pics .card a:hover { transform: translateY(-3px) scale(1.02); box-shadow: var(--lift); }
+.pics .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pics .card img.broken { display: none; }
+.pics .card .cname { font-weight: 600; }
+details.unmatched { margin-top: 44px; color: var(--muted); }
+details.unmatched summary { cursor: pointer; font-weight: 600; }
+details.unmatched ul { padding-left: 20px; font-size: 14px; }
+@media (max-width: 560px) {
+  h1 { font-size: 26px; }
+  .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile { grid-template-columns: 1fr; padding: 12px; }
+  .ring { grid-row: auto; width: 64px; height: 64px; }
+  .legend { margin-left: 0; }
+  .pics .cards { grid-template-columns: repeat(2, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+"""
+
+HTML_SCRIPT = """
+const box = document.getElementById('pics');
+function loadPics(root) {
+  if (!document.body.classList.contains('pics')) return;
+  root.querySelectorAll('img[data-src]').forEach(img => {
+    img.src = img.dataset.src; img.removeAttribute('data-src');
+  });
+}
+function showPics(on) {
+  document.body.classList.toggle('pics', on);
+  document.querySelectorAll('.panel:not([hidden])').forEach(loadPics);
+  try { localStorage.setItem('pics', on ? '1' : ''); } catch (e) {}
+}
+box.addEventListener('change', () => showPics(box.checked));
+try { if (localStorage.getItem('pics')) { box.checked = true; showPics(true); } } catch (e) {}
+function closeAll(section) {
+  section.querySelectorAll('.panel').forEach(p => p.hidden = true);
+  section.querySelectorAll('button.tile').forEach(t => t.setAttribute('aria-expanded', 'false'));
+  section.classList.remove('has-open');
+}
+document.querySelectorAll('button.tile').forEach(tile => tile.addEventListener('click', () => {
+  const section = tile.closest('section');
+  const panel = document.getElementById(tile.dataset.panel);
+  const wasOpen = !panel.hidden;
+  closeAll(section);
+  if (wasOpen) return;
+  panel.hidden = false;
+  tile.setAttribute('aria-expanded', 'true');
+  section.classList.add('has-open');
+  loadPics(panel);
+  if (panel.getBoundingClientRect().top > innerHeight - 160)
+    panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+}));
+document.querySelectorAll('.close').forEach(b => b.addEventListener('click', () => {
+  const section = b.closest('section');
+  const tile = section.querySelector('button.tile[aria-expanded="true"]');
+  closeAll(section);
+  if (tile) tile.focus({preventScroll: true});
+}));
+document.getElementById('sort').addEventListener('change', e => {
+  const by = e.target.value;
+  document.querySelectorAll('.sets').forEach(list => [...list.children].sort((a, b) => by === 'name'
+      ? a.dataset.name.localeCompare(b.dataset.name)
+      : by === 'missing' ? a.dataset.missing - b.dataset.missing || b.dataset.pct - a.dataset.pct
+      : b.dataset.pct - a.dataset.pct || a.dataset.missing - b.dataset.missing)
+    .forEach(el => list.appendChild(el)));
+});
+"""
+
+# Completion colours: (lowest percentage, label), most complete first; a set
+# takes the first one it reaches. Their classes are t5 down to t0.
+TIERS = [(100, "Complete"), (90, "90%+"), (80, "80%+"), (70, "70%+"), (50, "50%+"), (0, "Under 50%")]
+
+
+def _tier(pct):
+    """CSS class for a completion percentage's colour (see TIERS)."""
+    return next(f"t{len(TIERS) - 1 - i}" for i, (low, _) in enumerate(TIERS) if pct >= low)
+
+
+def _ring(pct):
+    """A completion ring with the percentage in the middle, rounded down so
+    a set is only shown at 100% (or 90%) once it's there."""
+    length = 2 * 3.14159 * 28 * pct / 100
+    return (f'<span class="ring"><svg viewBox="0 0 64 64" aria-hidden="true">'
+            f'<circle class="bg" cx="32" cy="32" r="28"/>'
+            f'<circle class="fg" cx="32" cy="32" r="28" stroke-dasharray="{length:.1f} 999"/>'
+            f'</svg><b>{int(pct)}<small>%</small></b></span>')
+
+
+def _set_tile(r, panel_id):
+    """A set's tile: completion ring, name and missing count. Clicking it
+    opens the panel `panel_id` with its missing cards; a complete set's
+    tile has nothing to open."""
+    e = html.escape
+    pct, missing = completion(r), len(r["missing"])
+    inner = (f'{_ring(pct)}<span class="tname">{e(r["set_name"])}</span>'
+             f'<span class="meta">{e(r["set_id"])} · {r["owned_count"]}/{r["total"]} owned</span>'
+             f'<span class="chip">{f"{missing} missing" if missing else "Complete"}</span>')
+    data = (f'data-name="{e(r["set_name"].lower())}" data-pct="{pct:.2f}" '
+            f'data-missing="{missing}"')
+    if not missing:
+        return f'<div class="tile {_tier(pct)}" {data}>{inner}</div>'
+    return (f'<button type="button" class="tile {_tier(pct)}" {data} data-panel="{panel_id}" '
+            f'aria-expanded="false" aria-controls="{panel_id}">{inner}</button>')
+
+
+def _set_panel(r, panel_id):
+    """A set's missing cards, hidden until its tile is clicked."""
+    e = html.escape
+    cards = []
+    for c in r["missing"]:
+        name, name_en = c.get("name") or "", c.get("name_en")
+        small, large = card_images(r, c)
+        pic = (f'<a href="{e(large)}" target="_blank" rel="noopener">'
+               f'<img data-src="{e(small)}" alt="" loading="lazy" '
+               f'onerror="this.className=\'broken\'"></a>' if small else "<a></a>")
+        en = f'<span class="en">{e(name_en)}</span>' if name_en and name_en != name else ""
+        cards.append(f'<li class="card">{pic}<span class="num">#{e(c.get("localId") or "?")}'
+                     f'</span><span class="cname">{e(name)}</span>{en}</li>')
+    pct = completion(r)
+    return (f'<div class="panel {_tier(pct)}" id="{panel_id}" hidden>'
+            f'<div class="phead">{_ring(pct)}<div><h4>{e(r["set_name"])}</h4>'
+            f'<p>{e(r["set_id"])} · {e(r["language"])} · {r["owned_count"]}/{r["total"]} owned · '
+            f'{len(r["missing"])} missing</p></div>'
+            f'<button type="button" class="close" aria-label="Close">×</button></div>'
+            f'<ul class="cards">{"".join(cards)}</ul></div>')
+
+
+def _set_group(sets, prefix, extra_class=""):
+    """A grid of set tiles, closest to finished first, with their panels
+    below it."""
+    sets = sorted(sets, key=lambda r: (-completion(r), len(r["missing"]), r["set_name"].lower()))
+    ids = [f"{prefix}-{i}" for i in range(len(sets))]
+    tiles = "".join(_set_tile(r, i) for r, i in zip(sets, ids))
+    panels = "".join(_set_panel(r, i) for r, i in zip(sets, ids) if r["missing"])
+    return f'<div class="sets grid{extra_class}">{tiles}</div>{panels}'
+
+
+def write_html(results, unmatched, path, below=(), min_complete=0):
+    """A page to look over: a section per language, the one you own the most
+    cards in first, with a tile per set coloured by how complete it is and
+    saying how many cards it's missing, closest to finished first. Clicking
+    a tile shows its missing cards under that language's tiles, one set at a
+    time. Card pictures are off until "Show card pictures" is ticked, and
+    then only the open set's are loaded."""
+    e = html.escape
+    languages = {}
+    for group, sets in enumerate((results, below)):
+        for r in sets:
+            languages.setdefault(r["language"], ([], []))[group].append(r)
+
+    owned = sum(r["owned_count"] for r in results)
+    total = sum(r["total"] for r in results)
+    missing = sum(len(r["missing"]) for r in results)
+    overall = 100.0 * owned / total if total else 0
+    stats = "".join(f'<div class="stat{cls}"><b>{v}</b><span>{label}</span></div>' for v, label, cls in (
+        (f"{int(overall)}%" if total else "–", "complete overall", f" overall {_tier(overall)}"),
+        (missing, "cards missing", ""), (len(results), "sets listed", ""),
+        (f"{owned}/{total}", "cards owned", "")))
+    legend = "".join(f'<span class="t{len(TIERS) - 1 - i}">{label}</span>'
+                     for i, (_, label) in enumerate(TIERS))
+    parts = [
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>Missing Cards</title><style>{HTML_STYLE}</style></head><body><main>',
+        '<header class="top"><div class="intro"><h1>Missing cards</h1>'
+        f'<p class="sub">Sets at least {min_complete:g}% complete · updated '
+        f'{datetime.datetime.now():%d %b %Y, %H:%M}</p></div>'
+        f'<div class="stats">{stats}</div></header>',
+        '<div class="controls"><label class="switch"><input type="checkbox" id="pics"><i></i>'
+        'Show card pictures</label>'
+        '<label>Sort <select id="sort"><option value="pct">Most complete</option>'
+        '<option value="missing">Fewest missing</option><option value="name">Set name</option>'
+        f'</select></label><div class="legend">{legend}</div></div>',
+    ]
+    ordered = sorted(languages.items(),
+                     key=lambda kv: (-sum(r["owned_count"] for r in kv[1][0] + kv[1][1]), kv[0]))
+    for n, (language, (kept, started)) in enumerate(ordered):
+        lang_owned = sum(r["owned_count"] for r in kept + started)
+        sub = [f"{lang_owned} cards owned", f"{len(kept)} set(s) at {min_complete:g}%+"]
+        if kept:
+            sub.append(f"{sum(len(r['missing']) for r in kept)} missing")
+        parts.append(f"<section><h2>{e(language)}</h2>"
+                     f'<p class="lang-sub">{" · ".join(sub)}</p>')
+        if kept:
+            parts.append(_set_group(kept, f"s{n}"))
+        if started:
+            parts.append(f"<h3>Started, under {min_complete:g}% complete ({len(started)})</h3>"
+                         + _set_group(started, f"u{n}", " small"))
+        parts.append('<p class="hint">Pick a set to see the cards it\'s missing.</p></section>')
+    if unmatched:
+        items = "".join(f"<li>{e(n)} ({e(lang)}): {e(why)}</li>" for n, lang, why in unmatched)
+        parts.append(f'<details class="unmatched"><summary>Couldn\'t check {len(unmatched)} '
+                     f"set(s)</summary><ul>{items}</ul></details>")
+    parts.append(f"</main><script>{HTML_SCRIPT}</script></body></html>")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+
+
 # --------------------------------------------------------------------- CLI --
 
 def build_arg_parser():
@@ -626,6 +952,10 @@ def build_arg_parser():
                    help="CSV of the missing cards print by print, for wants_list.py: MEGA Dream "
                         "ex's reverse holos as their own rows when the export says each copy's "
                         "finish (default: missing_prints.csv next to --out).")
+    p.add_argument("--html", metavar="FILE",
+                   help="Page giving an overview of every set: how complete it is, how many "
+                        "cards it's missing, and those cards, with pictures if you want them "
+                        "(default: missing_cards.html next to --out).")
     p.add_argument("--no-english-names", dest="english_names", action="store_false",
                    help="Skip looking up English names for non-English cards (saves "
                         "Cardmarket's ~14 MB product list and one TCGdex request per card).")
@@ -689,6 +1019,10 @@ def main(argv=None):
     write_prints_csv(results, prints_out)
     print(f"Wrote {sum(len(r.get('prints', r['missing'])) for r in results)} row(s) to "
           f"{os.path.abspath(prints_out)} for the wants list")
+    html_out = args.html or os.path.join(os.path.dirname(os.path.abspath(args.out)), HTML_NAME)
+    ensure_parent(html_out)
+    write_html(results, unmatched, html_out, below, args.min_complete)
+    print(f"Wrote the set overview to {os.path.abspath(html_out)}")
     if args.json:
         ensure_parent(args.json)
         write_json(results, unmatched, args.json, below, args.min_complete)

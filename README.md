@@ -34,7 +34,7 @@ Everything that's yours rather than the code's lives outside the repository,
 in `~/PokemonData` (or the folder named by the `POKEMON_DATA_DIR` environment
 variable), which is created on first use: the RareCandy export and login
 session, `missing_cards.csv`, `ordered.txt` and `ordered_arrived.txt`,
-`offers.csv`, `price_guide.csv`, `price_table.html`, the Cardmarket wants
+`missing_cards.html`, `offers.csv`, `price_guide.csv`, `price_table.html`, the Cardmarket wants
 list, `.env`, the `.price_cache/` folder and `nightly_search.log`. Every
 default path below is in that folder, and a file given on the command line
 is read from or written to exactly where you say.
@@ -128,6 +128,26 @@ Cardmarket for it. Cards TCGdex hasn't linked to a Cardmarket product yet,
 usually from very new sets, or that couldn't be fetched, are left blank and
 tried again next run. `--no-english-names` skips all of this.
 
+### The set overview (missing_cards.html)
+
+Every run also writes `missing_cards.html` next to `missing_cards.csv` (or
+where `--html` says): open it in a browser for an overview of your sets.
+There's a section per language, the one you own the most cards in first,
+with a tile per set showing how far through it you are, coloured by how
+complete it is, and how many cards it's missing. Tiles are sorted closest
+to finished first, or by fewest missing, or set name. Click a tile to see
+that set's missing cards below the language's tiles, one set at a time.
+Under each language, sets you've started but are under the `--min-complete`
+cut-off have tiles of their own. Sets that couldn't be checked are listed
+at the end.
+
+Tick **Show card pictures** to see each missing card's picture (click one for
+a larger version); the page remembers the choice. Pictures aren't loaded
+until then, and only for the set that's open. They come from TCGdex for English cards and from
+[scrydex](https://scrydex.com), where RareCandy's own pictures come from,
+for Japanese cards, which TCGdex has no pictures of. Cards neither has a
+picture of show an empty frame.
+
 `--json FILE` writes the same data grouped by set, plus any sets it couldn't
 match, for other tools to consume:
 
@@ -165,6 +185,7 @@ include them, and fetching rarity costs one request per card.
 | `--set-map FILE` | Set name overrides file (default `set_map.json`). |
 | `--min-complete PERCENT` | Only list sets you already own at least this much of (default `70`). `0` lists every set you own a card from. |
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv` in `~/PokemonData`). |
+| `--html FILE` | Where to write the set overview (default `missing_cards.html` next to `--out`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
 | `--no-english-names` | Don't look up English names for non-English cards. |
 | `--ordered FILE` | Cards on order (default `ordered.txt` in `~/PokemonData`, if it exists). Any now in the collection are moved out to `--arrived`; see [Cards on order](#cards-on-order-orderedtxt). |
