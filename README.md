@@ -136,8 +136,9 @@ There's a section per language, the one you own the most cards in first,
 split by series (Mega Evolution, Scarlet & Violet, ...), newest first. Each
 set has a tile showing how far through it you are, coloured by how complete
 it is, and how many cards it's missing. Tiles are sorted closest to
-finished first, or by fewest missing, or set name. Click a tile to see that
-set's missing cards below its series, one set per language at a time.
+finished first, or by fewest missing, set name or set number. Click a tile
+to see that set's missing cards below its series, one set per language at a
+time.
 
 Sets you've started but are under the `--min-complete` cut-off get tiles
 too, but sets under 10% complete (`--html-min-complete`) are left out, as

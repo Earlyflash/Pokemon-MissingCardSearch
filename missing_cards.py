@@ -807,8 +807,10 @@ document.querySelectorAll('.close').forEach(b => b.addEventListener('click', () 
 }));
 document.getElementById('sort').addEventListener('change', e => {
   const by = e.target.value;
+  const natural = (x, y) => x.localeCompare(y, undefined, {numeric: true, sensitivity: 'base'});
   document.querySelectorAll('.sets').forEach(list => [...list.children].sort((a, b) => by === 'name'
-      ? a.dataset.name.localeCompare(b.dataset.name)
+      ? natural(a.dataset.name, b.dataset.name)
+      : by === 'code' ? natural(a.dataset.code, b.dataset.code)
       : by === 'missing' ? a.dataset.missing - b.dataset.missing || b.dataset.pct - a.dataset.pct
       : b.dataset.pct - a.dataset.pct || a.dataset.missing - b.dataset.missing)
     .forEach(el => list.appendChild(el)));
@@ -844,7 +846,7 @@ def _set_tile(r, panel_id):
     inner = (f'{_ring(pct)}<span class="tname">{e(r["set_name"])}</span>'
              f'<span class="meta">{e(r["set_id"])} · {r["owned_count"]}/{r["total"]} owned</span>'
              f'<span class="chip">{f"{missing} missing" if missing else "Complete"}</span>')
-    data = (f'data-name="{e(r["set_name"].lower())}" '
+    data = (f'data-name="{e(r["set_name"].lower())}" data-code="{e(r["set_id"])}" '
             f'data-pct="{pct:.2f}" '
             f'data-missing="{missing}"')
     if not missing:
@@ -926,6 +928,7 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
         'Show card pictures</label>'
         '<label>Sort <select id="sort"><option value="pct">Most complete</option>'
         '<option value="missing">Fewest missing</option><option value="name">Set name</option>'
+        '<option value="code">Set number</option>'
         f'</select></label><div class="legend">{legend}</div></div>',
     ]
     for n, (language, sets) in enumerate(sorted(
