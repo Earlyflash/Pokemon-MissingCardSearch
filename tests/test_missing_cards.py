@@ -160,6 +160,21 @@ class ResolveSetIdTests(unittest.TestCase):
         # binder_cover._find_set_id alone would treat as ambiguous.
         self.assertEqual(missing_cards.resolve_set_id("mega evolution", "English", {}), "me01")
 
+    def test_own_languages_set_wins_for_a_shared_name(self):
+        listings = {"/ja/sets": [{"id": "S10b", "name": "Pokémon GO"},
+                                 {"id": "M6a", "name": "30th CELEBRATION"}],
+                    "/en/sets": [{"id": "pgo", "name": "Pokémon GO"},
+                                 {"id": "30th", "name": "30th Celebration"}]}
+
+        def fetch(url, verbose=False):
+            return next((v for k, v in listings.items() if url.endswith(k)), [])
+        with patch("binder_cover._fetch_json", side_effect=fetch):
+            resolve = missing_cards.resolve_set_id
+            self.assertEqual(resolve("Pokémon GO", "English", {}), "pgo")
+            self.assertEqual(resolve("Pokémon GO", "Japanese", {}), "S10b")
+            self.assertEqual(resolve("30th Celebration", "English", {}), "30th")
+            self.assertEqual(resolve("30th Celebration", "Japanese", {}), "M6a")
+
     @patch("binder_cover._fetch_json", side_effect=fake_fetch)
     def test_set_map_used_for_japanese_names(self, _):
         set_map = {"japanese": {"mega dream ex": "m2a"}}

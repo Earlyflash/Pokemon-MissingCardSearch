@@ -240,15 +240,15 @@ def _set_listing(lang):
     return _LISTING_CACHE[lang]
 
 
-def _exact_match(value, field):
+def _exact_match(value, field, langs=TCGDEX_LANGS):
     """Set id whose `field` ("id" or "name") equals `value` exactly (case-
-    insensitive) in any dataset, from the cached listings. binder_cover's
-    _find_set_id re-fetches every listing per call and only does substring name
-    matching, which calls "Mega Evolution" ambiguous next to "Mega Evolution
-    Black Star Promos"; an exact match settles that without a manual mapping,
-    and _find_set_id stays the fallback."""
+    insensitive) in any dataset, from the cached listings, trying `langs` in
+    order. binder_cover's _find_set_id re-fetches every listing per call and
+    only does substring name matching, which calls "Mega Evolution" ambiguous
+    next to "Mega Evolution Black Star Promos"; an exact match settles that
+    without a manual mapping, and _find_set_id stays the fallback."""
     needle = value.strip().lower()
-    for lang in TCGDEX_LANGS:
+    for lang in langs:
         hits = {s["id"] for s in _set_listing(lang)
                 if s.get("id") and str(s.get(field, "")).strip().lower() == needle}
         if len(hits) == 1:
@@ -258,11 +258,17 @@ def _exact_match(value, field):
 
 def resolve_set_id(set_name, language, set_map):
     """TCGdex set id for a RareCandy set name, or None. Order: set_map.json
-    override, exact name match, then binder_cover's code/name search."""
+    override, exact name match, then binder_cover's code/name search.
+
+    The cards' own language's datasets are searched first, as the same name
+    can be a different set in each: English "30th Celebration" is TCGdex's
+    en "30th", where the ja dataset calls M6a "30th CELEBRATION"."""
+    own = tcgdex_langs_for(language)
+    langs = (*own, *(lang for lang in TCGDEX_LANGS if lang not in own))
     code = mapped_code(set_map, set_name, language)
     if code:
-        return _exact_match(code, "id") or code
-    return _exact_match(set_name, "name") or binder_cover._find_set_id(set_name)
+        return _exact_match(code, "id", langs) or code
+    return _exact_match(set_name, "name", langs) or binder_cover._find_set_id(set_name)
 
 
 def tcgdex_langs_for(language):

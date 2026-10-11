@@ -533,7 +533,10 @@ adding an order twice.
    separately against the right card list.
 2. Each set name is matched to a TCGdex set id: first via `set_map.json`,
    then an exact name match across TCGdex's Japanese, English, Chinese and
-   Korean datasets, then the binder cover tool's code/name search.
+   Korean datasets, then the binder cover tool's code/name search. The
+   datasets for the cards' own language are searched first, as one name can
+   be a different set in each: English "30th Celebration" is TCGdex's `30th`,
+   while Japanese TCGdex calls M6a "30th CELEBRATION".
 3. The set's card list is fetched from the TCGdex dataset for that print
    language only (English for languages TCGdex's datasets here don't cover,
    such as German or French). Japanese, Chinese and Korean sets are numbered
