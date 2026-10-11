@@ -92,6 +92,14 @@ HTML_NAME = "missing_cards.html"
 # "<set id>_ja-<number>".
 SCRYDEX_IMAGES = "https://images.scrydex.com/pokemon"
 
+# English names for the series TCGdex's Japanese sets are in (by series id),
+# for grouping the set overview; other datasets' series are named in English.
+JA_SERIES_NAMES = {
+    "PMCG": "Base", "neo": "Neo", "VS": "VS", "web": "Web", "e": "E-Card", "ADV": "ADV",
+    "PCG": "PCG", "L": "Legend", "XY": "XY", "XYb": "XY BREAK", "SM": "Sun & Moon",
+    "S": "Sword & Shield", "SV": "Scarlet & Violet", "M": "Mega Evolution",
+}
+
 # Cardmarket's public product list names every product in English, Japanese
 # prints included, and TCGdex's card records carry the Cardmarket product id.
 # Together they give an English name for cards TCGdex only has in Japanese
@@ -271,6 +279,15 @@ def resolve_set_id(set_name, language, set_map):
     return _exact_match(set_name, "name", langs) or binder_cover._find_set_id(set_name)
 
 
+def series_name(detail, lang):
+    """The English name of the series a TCGdex set is in ("Scarlet &
+    Violet", ...), or "Other"."""
+    serie = detail.get("serie") or {}
+    if lang == "ja" and serie.get("id") in JA_SERIES_NAMES:
+        return JA_SERIES_NAMES[serie["id"]]
+    return serie.get("name") or "Other"
+
+
 def tcgdex_langs_for(language):
     return LANGUAGE_TO_TCGDEX.get(language.lower(), ("en",))
 
@@ -413,7 +430,8 @@ def find_missing(owned, set_map, finishes=None):
     group: set_name, language, set_id, tcgdex_lang, total, owned_count,
     missing (list of TCGdex card dicts: cards with no copy owned), prints
     (the same, but print by print where that was checked; see below),
-    unknown_owned (owned numbers TCGdex doesn't list), card_keys
+    unknown_owned (owned numbers TCGdex doesn't list), series (see
+    series_name), released (the set's release date, "" if unknown), card_keys
     (ordered.card_key of every card, and of every print checked, that TCGdex
     lists for the set). unmatched is [(set_name, language, reason)].
 
@@ -436,7 +454,7 @@ def find_missing(owned, set_map, finishes=None):
                            "code to set_map.json)")
             unmatched.append((set_name, language, reason))
             continue
-        cards, lang_used, _ = fetch_card_list(set_id, language)
+        cards, lang_used, detail = fetch_card_list(set_id, language)
         if not cards:
             unmatched.append((set_name, language,
                               f"matched TCGdex set '{set_id}', but TCGdex has no {language} "
@@ -470,7 +488,8 @@ def find_missing(owned, set_map, finishes=None):
             "tcgdex_lang": lang_used, "total": len(listed),
             "owned_count": len(numbers) - len(unknown),
             "missing": missing, "prints": by_print, "unknown_owned": unknown,
-            "card_keys": keys,
+            "card_keys": keys, "series": series_name(detail, lang_used),
+            "released": detail.get("releaseDate") or "",
         })
     return results, unmatched
 
@@ -673,7 +692,9 @@ section { margin-top: 40px; }
 h2 { font-size: 24px; letter-spacing: -0.01em; margin: 0; }
 .lang-sub { color: var(--muted); margin: 2px 0 16px; }
 h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
-     margin: 26px 0 12px; font-weight: 600; }
+     margin: 26px 0 12px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+h3::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+h3 span { font-weight: 500; text-transform: none; letter-spacing: 0; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 12px; }
 .tile { font: inherit; color: inherit; text-align: left; width: 100%;
         display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: center;
@@ -698,8 +719,6 @@ button.tile:focus-visible { outline: 2px solid var(--tier); outline-offset: 2px;
 .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .chip { justify-self: start; align-self: start; font-size: 12px; font-weight: 600; padding: 2px 9px;
         border-radius: 999px; color: var(--tier); background: color-mix(in srgb, var(--tier) 14%, transparent); }
-.small .ring { width: 60px; height: 60px; }
-.small .ring b { font-size: 16px; }
 .hint { color: var(--muted); font-size: 14px; margin: 14px 2px 0; }
 section.has-open .hint { display: none; }
 .panel { margin-top: 16px; background: var(--panel); border-radius: 18px;
@@ -825,7 +844,8 @@ def _set_tile(r, panel_id):
     inner = (f'{_ring(pct)}<span class="tname">{e(r["set_name"])}</span>'
              f'<span class="meta">{e(r["set_id"])} · {r["owned_count"]}/{r["total"]} owned</span>'
              f'<span class="chip">{f"{missing} missing" if missing else "Complete"}</span>')
-    data = (f'data-name="{e(r["set_name"].lower())}" data-pct="{pct:.2f}" '
+    data = (f'data-name="{e(r["set_name"].lower())}" '
+            f'data-pct="{pct:.2f}" '
             f'data-missing="{missing}"')
     if not missing:
         return f'<div class="tile {_tier(pct)}" {data}>{inner}</div>'
@@ -855,36 +875,42 @@ def _set_panel(r, panel_id):
             f'<ul class="cards">{"".join(cards)}</ul></div>')
 
 
-def _set_group(sets, prefix, extra_class=""):
+def _set_group(sets, prefix):
     """A grid of set tiles, closest to finished first, with their panels
     below it."""
     sets = sorted(sets, key=lambda r: (-completion(r), len(r["missing"]), r["set_name"].lower()))
     ids = [f"{prefix}-{i}" for i in range(len(sets))]
     tiles = "".join(_set_tile(r, i) for r, i in zip(sets, ids))
     panels = "".join(_set_panel(r, i) for r, i in zip(sets, ids) if r["missing"])
-    return f'<div class="sets grid{extra_class}">{tiles}</div>{panels}'
+    return f'<div class="sets grid">{tiles}</div>{panels}'
 
 
-def write_html(results, unmatched, path, below=(), min_complete=0):
+def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10):
     """A page to look over: a section per language, the one you own the most
-    cards in first, with a tile per set coloured by how complete it is and
-    saying how many cards it's missing, closest to finished first. Clicking
-    a tile shows its missing cards under that language's tiles, one set at a
-    time. Card pictures are off until "Show card pictures" is ticked, and
-    then only the open set's are loaded."""
+    cards in first, split by series, newest first, with a tile per set
+    coloured by how complete it is and saying how many cards it's missing,
+    closest to finished first. Clicking a tile shows its missing cards under
+    that series' tiles, one set per language at a time. Sets under
+    `hide_below` percent complete are left out, and so is a series or
+    language with none at or above it, and out of every total. Card pictures are off until "Show
+    card pictures" is ticked, and then only the open set's are loaded."""
     e = html.escape
+    shown = [r for r in [*results, *below] if completion(r) >= hide_below]
+    hidden = {}
+    for r in [*results, *below]:
+        if completion(r) < hide_below:
+            hidden[r["language"]] = hidden.get(r["language"], 0) + 1
     languages = {}
-    for group, sets in enumerate((results, below)):
-        for r in sets:
-            languages.setdefault(r["language"], ([], []))[group].append(r)
+    for r in shown:
+        languages.setdefault(r["language"], []).append(r)
 
-    owned = sum(r["owned_count"] for r in results)
-    total = sum(r["total"] for r in results)
-    missing = sum(len(r["missing"]) for r in results)
+    owned = sum(r["owned_count"] for r in shown)
+    total = sum(r["total"] for r in shown)
+    missing = sum(len(r["missing"]) for r in shown)
     overall = 100.0 * owned / total if total else 0
     stats = "".join(f'<div class="stat{cls}"><b>{v}</b><span>{label}</span></div>' for v, label, cls in (
         (f"{int(overall)}%" if total else "–", "complete overall", f" overall {_tier(overall)}"),
-        (missing, "cards missing", ""), (len(results), "sets listed", ""),
+        (missing, "cards missing", ""), (len(shown), "sets", ""),
         (f"{owned}/{total}", "cards owned", "")))
     legend = "".join(f'<span class="t{len(TIERS) - 1 - i}">{label}</span>'
                      for i, (_, label) in enumerate(TIERS))
@@ -893,7 +919,7 @@ def write_html(results, unmatched, path, below=(), min_complete=0):
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>Missing Cards</title><style>{HTML_STYLE}</style></head><body><main>',
         '<header class="top"><div class="intro"><h1>Missing cards</h1>'
-        f'<p class="sub">Sets at least {min_complete:g}% complete · updated '
+        f'<p class="sub">Sets under {hide_below:g}% complete are left out · updated '
         f'{datetime.datetime.now():%d %b %Y, %H:%M}</p></div>'
         f'<div class="stats">{stats}</div></header>',
         '<div class="controls"><label class="switch"><input type="checkbox" id="pics"><i></i>'
@@ -902,20 +928,23 @@ def write_html(results, unmatched, path, below=(), min_complete=0):
         '<option value="missing">Fewest missing</option><option value="name">Set name</option>'
         f'</select></label><div class="legend">{legend}</div></div>',
     ]
-    ordered = sorted(languages.items(),
-                     key=lambda kv: (-sum(r["owned_count"] for r in kv[1][0] + kv[1][1]), kv[0]))
-    for n, (language, (kept, started)) in enumerate(ordered):
-        lang_owned = sum(r["owned_count"] for r in kept + started)
-        sub = [f"{lang_owned} cards owned", f"{len(kept)} set(s) at {min_complete:g}%+"]
-        if kept:
-            sub.append(f"{sum(len(r['missing']) for r in kept)} missing")
+    for n, (language, sets) in enumerate(sorted(
+            languages.items(), key=lambda kv: (-sum(r["owned_count"] for r in kv[1]), kv[0]))):
+        sub = [f"{sum(r['owned_count'] for r in sets)} cards owned", f"{len(sets)} set(s)",
+               f"{sum(len(r['missing']) for r in sets)} missing"]
+        if hidden.get(language):
+            sub.append(f"{hidden[language]} set(s) under {hide_below:g}% hidden")
         parts.append(f"<section><h2>{e(language)}</h2>"
                      f'<p class="lang-sub">{" · ".join(sub)}</p>')
-        if kept:
-            parts.append(_set_group(kept, f"s{n}"))
-        if started:
-            parts.append(f"<h3>Started, under {min_complete:g}% complete ({len(started)})</h3>"
-                         + _set_group(started, f"u{n}", " small"))
+        series = {}
+        for r in sets:
+            series.setdefault(r.get("series") or "Other", []).append(r)
+        # Newest series first, by its latest set.
+        for m, (name, group) in enumerate(sorted(
+                series.items(), key=lambda kv: max(r.get("released") or "" for r in kv[1]),
+                reverse=True)):
+            parts.append(f'<h3>{e(name)} <span>{len(group)} set(s)</span></h3>'
+                         + _set_group(group, f"s{n}-{m}"))
         parts.append('<p class="hint">Pick a set to see the cards it\'s missing.</p></section>')
     if unmatched:
         items = "".join(f"<li>{e(n)} ({e(lang)}): {e(why)}</li>" for n, lang, why in unmatched)
@@ -962,6 +991,9 @@ def build_arg_parser():
                    help="Page giving an overview of every set: how complete it is, how many "
                         "cards it's missing, and those cards, with pictures if you want them "
                         "(default: missing_cards.html next to --out).")
+    p.add_argument("--html-min-complete", type=float, default=10, metavar="PERCENT",
+                   help="Leave sets under this percentage complete off the --html page "
+                        "(default: %(default)g).")
     p.add_argument("--no-english-names", dest="english_names", action="store_false",
                    help="Skip looking up English names for non-English cards (saves "
                         "Cardmarket's ~14 MB product list and one TCGdex request per card).")
@@ -1027,7 +1059,7 @@ def main(argv=None):
           f"{os.path.abspath(prints_out)} for the wants list")
     html_out = args.html or os.path.join(os.path.dirname(os.path.abspath(args.out)), HTML_NAME)
     ensure_parent(html_out)
-    write_html(results, unmatched, html_out, below, args.min_complete)
+    write_html(results, unmatched, html_out, below, args.min_complete, args.html_min_complete)
     print(f"Wrote the set overview to {os.path.abspath(html_out)}")
     if args.json:
         ensure_parent(args.json)

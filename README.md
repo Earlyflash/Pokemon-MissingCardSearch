@@ -133,13 +133,17 @@ tried again next run. `--no-english-names` skips all of this.
 Every run also writes `missing_cards.html` next to `missing_cards.csv` (or
 where `--html` says): open it in a browser for an overview of your sets.
 There's a section per language, the one you own the most cards in first,
-with a tile per set showing how far through it you are, coloured by how
-complete it is, and how many cards it's missing. Tiles are sorted closest
-to finished first, or by fewest missing, or set name. Click a tile to see
-that set's missing cards below the language's tiles, one set at a time.
-Under each language, sets you've started but are under the `--min-complete`
-cut-off have tiles of their own. Sets that couldn't be checked are listed
-at the end.
+split by series (Mega Evolution, Scarlet & Violet, ...), newest first. Each
+set has a tile showing how far through it you are, coloured by how complete
+it is, and how many cards it's missing. Tiles are sorted closest to
+finished first, or by fewest missing, or set name. Click a tile to see that
+set's missing cards below its series, one set per language at a time.
+
+Sets you've started but are under the `--min-complete` cut-off get tiles
+too, but sets under 10% complete (`--html-min-complete`) are left out, as
+is a series or language with none at 10% or more, and the totals at the
+top count only the sets shown. Sets that couldn't be checked are listed at
+the end.
 
 Tick **Show card pictures** to see each missing card's picture (click one for
 a larger version); the page remembers the choice. Pictures aren't loaded
@@ -186,6 +190,7 @@ include them, and fetching rarity costs one request per card.
 | `--min-complete PERCENT` | Only list sets you already own at least this much of (default `70`). `0` lists every set you own a card from. |
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv` in `~/PokemonData`). |
 | `--html FILE` | Where to write the set overview (default `missing_cards.html` next to `--out`). |
+| `--html-min-complete PERCENT` | Leave sets under this much complete off the set overview (default `10`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
 | `--no-english-names` | Don't look up English names for non-English cards. |
 | `--ordered FILE` | Cards on order (default `ordered.txt` in `~/PokemonData`, if it exists). Any now in the collection are moved out to `--arrived`; see [Cards on order](#cards-on-order-orderedtxt). |
