@@ -340,6 +340,35 @@ e.g. `45m`, to change that) so a stuck run can't hold up the search. Each
 script trims its log before writing to it, keeping the last `LOG_LINES`
 lines (5000 for the orders log, 20000 for the search log).
 
+### Reading the pages online
+
+`publish.sh` uploads `missing_cards.html` and `price_table.html` to
+[Cloudflare Pages](https://pages.cloudflare.com) with an index page linking
+them, so you can read them from anywhere without exposing your own machine.
+Cloudflare hosts the copies; nothing connects back to you.
+
+1. In the Cloudflare dashboard, create an API token (My Profile → API Tokens
+   → Create Token → Custom) with **Account → Cloudflare Pages → Edit**, and
+   note your account ID (on the Workers & Pages overview).
+2. Add both to `~/PokemonData/.env` (see `.env.example`):
+   `CLOUDFLARE_API_TOKEN=...` and `CLOUDFLARE_ACCOUNT_ID=...`. Set
+   `CF_PAGES_PROJECT` to use a project name other than
+   `pokemon-missing-cards`.
+3. Run `./publish.sh`. The first run creates the Pages project; the pages
+   are then at `https://<project>.pages.dev`.
+
+Once `CLOUDFLARE_API_TOKEN` is set, `nightly_search.sh` runs `publish.sh`
+after each search. It uses Wrangler 3 through `npx` (Wrangler 4 needs
+Node 22), so it needs Node.js and npm.
+
+**The pages are public** to anyone who finds the URL. To keep them to
+yourself, put [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-public-app/)
+(free for up to 50 users) in front: in Zero Trust → Access → Applications,
+add a self-hosted application for `<project>.pages.dev` and
+`*.<project>.pages.dev` (the second covers each deployment's own preview
+URL) with a policy allowing your email address. You then sign in with a
+one-time code sent to that address.
+
 ### Marketplaces
 
 | ID | Marketplace | How it matches |

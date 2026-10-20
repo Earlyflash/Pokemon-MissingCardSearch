@@ -6,8 +6,10 @@
 # rewrites missing_cards.csv (moving arrived cards out of ordered.txt); if
 # that fails, the search uses the missing_cards.csv already there.
 # --cache-ttl 0 rechecks every page with the shops; unchanged pages cost a
-# short "not modified" reply rather than a download. The log keeps its last
-# LOG_LINES (default 20000) lines.
+# short "not modified" reply rather than a download. With
+# CLOUDFLARE_API_TOKEN in the environment or the data folder's .env, the
+# pages are then uploaded to Cloudflare Pages by publish.sh. The log keeps
+# its last LOG_LINES (default 20000) lines.
 DATA_DIR="${POKEMON_DATA_DIR:-$HOME/PokemonData}"
 mkdir -p "$DATA_DIR" || exit 1
 cd "$(dirname "$0")" || exit 1
@@ -20,3 +22,6 @@ if [ -n "$RARECANDY_PROFILE" ]; then
     python3 missing_cards.py --profile "$RARECANDY_PROFILE" >> "$LOG" 2>&1
 fi
 python3 price_search.py --cache-ttl 0 >> "$LOG" 2>&1
+if [ -n "$CLOUDFLARE_API_TOKEN" ] || grep -q '^CLOUDFLARE_API_TOKEN=' "$DATA_DIR/.env" 2>/dev/null; then
+    ./publish.sh >> "$LOG" 2>&1
+fi
