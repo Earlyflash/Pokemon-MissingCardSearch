@@ -457,6 +457,24 @@ class MainTests(unittest.TestCase):
         self.assertNotIn("<h2>Japanese</h2>", page)
         self.assertIn("<b>2/3</b><span>cards owned</span>", page)
 
+    def test_html_marks_ordered_cards(self):
+        with tempfile.TemporaryDirectory() as d:
+            ordered = os.path.join(d, "ordered.txt")
+            with open(ordered, "w", encoding="utf-8") as f:
+                f.write("me01-001 | 2026-10-01 | Cardmarket | 123\n"
+                        "M2a-002 | 2026-10-02\n")
+            page = self.html_page("--ordered", ordered)
+        self.assertIn('title="Ordered from Cardmarket"', page)
+        self.assertIn('title="Ordered"', page)
+        self.assertEqual(page.count('<li class="card ordered">'), 2)
+        self.assertIn("me01 · 2/3 owned · 1 ordered", page)
+        self.assertIn('<span class="ord">Ordered</span>', page)
+        # Without an ordered.txt, nothing is marked.
+        with tempfile.TemporaryDirectory() as d:
+            page = self.html_page("--ordered", os.path.join(d, "ordered.txt"))
+        self.assertNotIn("card ordered", page)
+        self.assertNotIn('class="ord"', page)
+
     def test_card_images(self):
         ja = {"tcgdex_lang": "ja", "set_id": "M2a"}
         en = {"tcgdex_lang": "en", "set_id": "me01"}

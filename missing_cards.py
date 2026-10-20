@@ -65,7 +65,7 @@ import binder_cover  # noqa: E402  (path set up just above)
 from binder_cover import TCGDEX_BASE, TCGDEX_LANGS  # noqa: E402
 from marketplaces.base import FINISH_NORMAL, FINISHES, finish_key  # noqa: E402
 from marketplaces.cardmarket import card_variants, product_id  # noqa: E402
-from ordered import card_key, default_arrived_path, prune_arrived  # noqa: E402
+from ordered import card_key, default_arrived_path, prune_arrived, read_ordered_shops  # noqa: E402
 
 # RareCandyExporter writes a full language name per card (detected from the
 # card's scrydex image URL). These are the only TCGdex datasets whose card list
@@ -645,6 +645,7 @@ HTML_STYLE = """
   --track: #ebe9e3; --shadow: 0 1px 2px rgba(20, 20, 30, .06), 0 4px 14px rgba(20, 20, 30, .06);
   --lift: 0 2px 4px rgba(20, 20, 30, .08), 0 12px 28px rgba(20, 20, 30, .12);
   --t0: #d1495b; --t1: #df7a22; --t2: #c79a00; --t3: #6a9f1e; --t4: #1f9d63; --t5: #7c5cff;
+  --gem: #1a7fd4;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -652,6 +653,7 @@ HTML_STYLE = """
     --track: #2a2a2f; --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .25);
     --lift: 0 2px 4px rgba(0, 0, 0, .5), 0 14px 30px rgba(0, 0, 0, .45);
     --t0: #f07a8a; --t1: #f5a050; --t2: #e8c547; --t3: #9fd04a; --t4: #3fcf8e; --t5: #a58bff;
+    --gem: #5cb3ff;
   }
 }
 .t0 { --tier: var(--t0); } .t1 { --tier: var(--t1); } .t2 { --tier: var(--t2); }
@@ -742,6 +744,19 @@ section.has-open .hint { display: none; }
 .card { display: flex; gap: 8px; align-items: baseline; min-width: 0; padding: 3px 0; }
 .card .num { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 3.6em; font-size: 13px; }
 .card .en { color: var(--muted); }
+.gem { flex: none; align-self: center; display: inline-flex; align-items: center; gap: 6px;
+       padding: 2px 9px 2px 8px; border-radius: 999px; background: var(--gem); color: var(--bg);
+       font-size: 12px; font-weight: 700; letter-spacing: .02em; line-height: 1.4; cursor: help;
+       box-shadow: 0 0 0 3px color-mix(in srgb, var(--gem) 22%, transparent); }
+.gem::before { content: ""; width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg);
+               background: var(--bg); }
+.card.ordered .cname { color: var(--gem); font-weight: 650; }
+.legend .ord::before { width: 8px; height: 8px; margin: 0 1px; border-radius: 2px; transform: rotate(45deg);
+                       background: var(--gem); }
+.pics .card { position: relative; }
+.pics .card .gem { position: absolute; top: 8px; right: 8px; font-size: 13px; padding: 3px 10px 3px 9px;
+                   box-shadow: 0 0 0 2px #fff, 0 2px 8px rgba(0, 0, 0, .45); }
+.pics .card.ordered a { outline: 3px solid var(--gem); outline-offset: -1px; }
 .card a { display: none; }
 .pics .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 16px; }
 .pics .card { flex-direction: column; gap: 1px; font-size: 13px; padding: 0; }
@@ -837,14 +852,26 @@ def _ring(pct):
             f'</svg><b>{int(pct)}<small>%</small></b></span>')
 
 
-def _set_tile(r, panel_id):
-    """A set's tile: completion ring, name and missing count. Clicking it
-    opens the panel `panel_id` with its missing cards; a complete set's
-    tile has nothing to open."""
+def _ordered_from(c, ordered):
+    """The shops a missing card was ordered from (see read_ordered_shops),
+    any print of it, or None if it isn't on order."""
+    key = card_key(c.get("id"))
+    if not key:
+        return None
+    hits = [shops for k, shops in ordered.items() if k == key or k.startswith(key + " ")]
+    return [s for shops in hits for s in shops] if hits else None
+
+
+def _set_tile(r, panel_id, ordered=None):
+    """A set's tile: completion ring, name and missing count, and how many of
+    those are on order. Clicking it opens the panel `panel_id` with its
+    missing cards; a complete set's tile has nothing to open."""
     e = html.escape
     pct, missing = completion(r), len(r["missing"])
+    on_order = sum(_ordered_from(c, ordered or {}) is not None for c in r["missing"])
     inner = (f'{_ring(pct)}<span class="tname">{e(r["set_name"])}</span>'
-             f'<span class="meta">{e(r["set_id"])} · {r["owned_count"]}/{r["total"]} owned</span>'
+             f'<span class="meta">{e(r["set_id"])} · {r["owned_count"]}/{r["total"]} owned'
+             f'{f" · {on_order} ordered" if on_order else ""}</span>'
              f'<span class="chip">{f"{missing} missing" if missing else "Complete"}</span>')
     data = (f'data-name="{e(r["set_name"].lower())}" data-code="{e(r["set_id"])}" '
             f'data-pct="{pct:.2f}" '
@@ -855,10 +882,12 @@ def _set_tile(r, panel_id):
             f'aria-expanded="false" aria-controls="{panel_id}">{inner}</button>')
 
 
-def _set_panel(r, panel_id):
-    """A set's missing cards, hidden until its tile is clicked."""
+def _set_panel(r, panel_id, ordered=None):
+    """A set's missing cards, hidden until its tile is clicked. Cards on
+    order (any print of them, in `ordered`; see read_ordered_shops) get an
+    "Ordered" gem badge saying where they were ordered from when hovered."""
     e = html.escape
-    cards = []
+    cards, on_order = [], 0
     for c in r["missing"]:
         name, name_en = c.get("name") or "", c.get("name_en")
         small, large = card_images(r, c)
@@ -866,28 +895,34 @@ def _set_panel(r, panel_id):
                f'<img data-src="{e(small)}" alt="" loading="lazy" '
                f'onerror="this.className=\'broken\'"></a>' if small else "<a></a>")
         en = f'<span class="en">{e(name_en)}</span>' if name_en and name_en != name else ""
-        cards.append(f'<li class="card">{pic}<span class="num">#{e(c.get("localId") or "?")}'
-                     f'</span><span class="cname">{e(name)}</span>{en}</li>')
+        shops = _ordered_from(c, ordered or {})
+        cls, gem = "card", ""
+        if shops is not None:
+            on_order += 1
+            title = f"Ordered from {', '.join(shops)}" if shops else "Ordered"
+            cls, gem = "card ordered", f'<span class="gem" title="{e(title)}">Ordered</span>'
+        cards.append(f'<li class="{cls}">{pic}<span class="num">#{e(c.get("localId") or "?")}'
+                     f'</span><span class="cname">{e(name)}</span>{en}{gem}</li>')
     pct = completion(r)
     return (f'<div class="panel {_tier(pct)}" id="{panel_id}" hidden>'
             f'<div class="phead">{_ring(pct)}<div><h4>{e(r["set_name"])}</h4>'
             f'<p>{e(r["set_id"])} · {e(r["language"])} · {r["owned_count"]}/{r["total"]} owned · '
-            f'{len(r["missing"])} missing</p></div>'
+            f'{len(r["missing"])} missing{f" · {on_order} ordered" if on_order else ""}</p></div>'
             f'<button type="button" class="close" aria-label="Close">×</button></div>'
             f'<ul class="cards">{"".join(cards)}</ul></div>')
 
 
-def _set_group(sets, prefix):
+def _set_group(sets, prefix, ordered=None):
     """A grid of set tiles, closest to finished first, with their panels
     below it."""
     sets = sorted(sets, key=lambda r: (-completion(r), len(r["missing"]), r["set_name"].lower()))
     ids = [f"{prefix}-{i}" for i in range(len(sets))]
-    tiles = "".join(_set_tile(r, i) for r, i in zip(sets, ids))
-    panels = "".join(_set_panel(r, i) for r, i in zip(sets, ids) if r["missing"])
+    tiles = "".join(_set_tile(r, i, ordered) for r, i in zip(sets, ids))
+    panels = "".join(_set_panel(r, i, ordered) for r, i in zip(sets, ids) if r["missing"])
     return f'<div class="sets grid">{tiles}</div>{panels}'
 
 
-def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10):
+def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10, ordered=None):
     """A page to look over: a section per language, the one you own the most
     cards in first, split by series, newest first, with a tile per set
     coloured by how complete it is and saying how many cards it's missing,
@@ -895,7 +930,8 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
     that series' tiles, one set per language at a time. Sets under
     `hide_below` percent complete are left out, and so is a series or
     language with none at or above it, and out of every total. Card pictures are off until "Show
-    card pictures" is ticked, and then only the open set's are loaded."""
+    card pictures" is ticked, and then only the open set's are loaded. Missing
+    cards on order (`ordered`, from read_ordered_shops) are marked with a gem."""
     e = html.escape
     shown = [r for r in [*results, *below] if completion(r) >= hide_below]
     hidden = {}
@@ -916,6 +952,8 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
         (f"{owned}/{total}", "cards owned", "")))
     legend = "".join(f'<span class="t{len(TIERS) - 1 - i}">{label}</span>'
                      for i, (_, label) in enumerate(TIERS))
+    if ordered:
+        legend += '<span class="ord">Ordered</span>'
     parts = [
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -947,7 +985,7 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
                 series.items(), key=lambda kv: max(r.get("released") or "" for r in kv[1]),
                 reverse=True)):
             parts.append(f'<h3>{e(name)} <span>{len(group)} set(s)</span></h3>'
-                         + _set_group(group, f"s{n}-{m}"))
+                         + _set_group(group, f"s{n}-{m}", ordered))
         parts.append('<p class="hint">Pick a set to see the cards it\'s missing.</p></section>')
     if unmatched:
         items = "".join(f"<li>{e(n)} ({e(lang)}): {e(why)}</li>" for n, lang, why in unmatched)
@@ -1062,7 +1100,8 @@ def main(argv=None):
           f"{os.path.abspath(prints_out)} for the wants list")
     html_out = args.html or os.path.join(os.path.dirname(os.path.abspath(args.out)), HTML_NAME)
     ensure_parent(html_out)
-    write_html(results, unmatched, html_out, below, args.min_complete, args.html_min_complete)
+    write_html(results, unmatched, html_out, below, args.min_complete, args.html_min_complete,
+               read_ordered_shops(args.ordered))
     print(f"Wrote the set overview to {os.path.abspath(html_out)}")
     if args.json:
         ensure_parent(args.json)

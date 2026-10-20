@@ -140,6 +140,11 @@ finished first, or by fewest missing, set name or set number. Click a tile
 to see that set's missing cards below its series, one set per language at a
 time.
 
+Missing cards listed in `ordered.txt` (any print of them; see
+[Cards on order](#cards-on-order-orderedtxt)) are marked with a blue "Ordered" badge,
+which names the shop each was ordered from when you hover over it, and each
+tile says how many of its missing cards are on order.
+
 Sets you've started but are under the `--min-complete` cut-off get tiles
 too, but sets under 10% complete (`--html-min-complete`) are left out, as
 is a series or language with none at 10% or more, and the totals at the
