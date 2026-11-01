@@ -566,6 +566,13 @@ out of `ordered.txt` by themselves. The order number in each line, kept in
 `ordered_arrived.txt` after the card arrives, is what stops the email task
 adding an order twice.
 
+Emails don't always pin down the card. Cardmarket's give no card number, so
+the two halves of a LEGEND card look the same. When the set is known and
+only one of the cards that fit is in `missing_prints.csv`, Claude uses that
+one and ends the line with "(id picked from missing list)" so you can check
+it. A card it still can't place goes in by name: fix those lines by hand,
+because only lines with a card id show as ordered on the pages.
+
 ## How it works
 
 1. Every card in the export is grouped by **set name + print language**, so

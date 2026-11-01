@@ -24,9 +24,16 @@ MEGA Dream ex (M2a) card's reverse holos, add " energy" for the Energy
 pattern or " ball" for any other pattern (Poké Ball, Love Ball, Team Rocket,
 ...) after the id, e.g. "M2a-032 energy"; Cardmarket names these as
 version V.1 (energy) and V.2 (ball) of the card in "MEGA Dream ex:
-Additionals". If you can't pin down the card
-confidently, write the card as the email names it in place of the id, with
-its set and number, so it's still recorded.
+Additionals". If you know the card's set but more than one card in it fits
+everything the email says (the two halves of a LEGEND card share a name,
+say, and Cardmarket's emails give no card number), read missing_prints.csv
+in the current folder, the cards still missing from the collection. If
+exactly one of the cards that fit is listed there (its "TCGdex Card ID"
+column), use that id and add " (id picked from missing list)" to the end of
+the line. Never use the missing list to guess the set: it only covers some
+sets, so a name alone ("Mewtwo ex") isn't enough. If you still can't pin
+down the card confidently, write the card as the email names it in place of
+the id, with its set and number, so it's still recorded.
 
 If an email cancels or refunds an order already in ordered.txt, put "# cancelled "
 at the start of that order's lines. A refund can be for only some of an
