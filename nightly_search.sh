@@ -5,6 +5,8 @@
 # With RARECANDY_PROFILE set, it first re-exports that RareCandy profile and
 # rewrites missing_cards.csv (moving arrived cards out of ordered.txt); if
 # that fails, the search uses the missing_cards.csv already there.
+# arrived_emails.sh then moves the emails of orders that have fully arrived
+# into your orders mail folder.
 # --cache-ttl 0 rechecks every page with the shops; unchanged pages cost a
 # short "not modified" reply rather than a download. With
 # CLOUDFLARE_API_TOKEN in the environment or the data folder's .env, the
@@ -21,6 +23,7 @@ echo "=== $(date '+%Y-%m-%d %H:%M') nightly search" >> "$LOG"
 if [ -n "$RARECANDY_PROFILE" ]; then
     python3 missing_cards.py --profile "$RARECANDY_PROFILE" >> "$LOG" 2>&1
 fi
+./arrived_emails.sh >> "$LOG" 2>&1
 python3 price_search.py --cache-ttl 0 >> "$LOG" 2>&1
 if [ -n "$CLOUDFLARE_API_TOKEN" ] || grep -q '^CLOUDFLARE_API_TOKEN=' "$DATA_DIR/.env" 2>/dev/null; then
     ./publish.sh >> "$LOG" 2>&1

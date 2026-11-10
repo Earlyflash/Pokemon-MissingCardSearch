@@ -27,6 +27,8 @@ from marketplaces.base import FINISH_NORMAL, FINISHES
 
 FIELD_SEP = " | "
 ARRIVED_NAME = "ordered_arrived.txt"
+# Orders whose emails have been moved to the orders folder, one per line.
+FILED_NAME = "emails_filed.txt"
 _CARD_ID = re.compile(r"([^\s()]+-[^\s()]+)(?:\s+(" + "|".join(FINISHES) + r"))?", re.IGNORECASE)
 
 
@@ -164,8 +166,66 @@ def sort_file(path):
         _write_lines(path, header + orders)
 
 
+def _order_of(line):
+    """(shop, order number) of a line, or None when it doesn't name both."""
+    fields = [f.strip() for f in line.split(FIELD_SEP.strip())]
+    if len(fields) < 4 or not fields[2] or not fields[3]:
+        return None
+    return fields[2], fields[3]
+
+
+def _order_id(order):
+    return order[0].casefold(), order[1].casefold()
+
+
+def read_filed(path):
+    """Orders whose emails have been filed, as (shop, order number) in
+    casefold, from FILED_NAME's "<shop> | <order number> | ..." lines."""
+    filed = set()
+    for line in _read_lines(path):
+        fields = [f.strip() for f in line.split(FIELD_SEP.strip())]
+        if len(fields) >= 2 and fields[0] and fields[1] and not fields[0].startswith("#"):
+            filed.add(_order_id(fields[:2]))
+    return filed
+
+
+def arrived_orders(ordered_path, arrived_path=None, filed_path=None):
+    """Orders whose every card has arrived and whose emails haven't been
+    filed yet: {(shop, order number): [arrived lines]}, in the order they
+    arrived.
+    An order is done once ordered.txt has no line left for it, other than
+    cancelled ones; one still waiting on a card isn't. Lines with no shop and
+    order number can't be tied to an email and are left out."""
+    arrived_path = arrived_path or default_arrived_path(ordered_path)
+    filed_path = filed_path or os.path.join(os.path.dirname(os.path.abspath(ordered_path)), FILED_NAME)
+    # Cancelled lines are comments, so parse_line skips them.
+    skip = read_filed(filed_path) | {
+        _order_id(order) for line in _read_lines(ordered_path)
+        if parse_line(line) and (order := _order_of(line))}
+    orders = {}
+    for line in _read_lines(arrived_path):
+        order = parse_line(line) and _order_of(line)
+        if order and _order_id(order) not in skip:
+            orders.setdefault(order, []).append(line.strip())
+    return orders
+
+
+def _usage():
+    sys.exit("Usage: python ordered.py sort ORDERED_FILE\n"
+             "       python ordered.py arrived-orders ORDERED_FILE")
+
+
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 3 or sys.argv[1] != "sort":
-        sys.exit("Usage: python ordered.py sort ORDERED_FILE")
-    sort_file(sys.argv[2])
+    if len(sys.argv) != 3:
+        _usage()
+    if sys.argv[1] == "sort":
+        sort_file(sys.argv[2])
+    elif sys.argv[1] == "arrived-orders":
+        # Every arrived card of each order, grouped, for the email filing task.
+        for (shop, number), lines in arrived_orders(sys.argv[2]).items():
+            print(f"{shop}{FIELD_SEP}{number}")
+            for line in lines:
+                print(f"    {line}")
+    else:
+        _usage()

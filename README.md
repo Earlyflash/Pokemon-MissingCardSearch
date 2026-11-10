@@ -33,7 +33,7 @@ needed, even though the binder cover tool uses it for drawing.
 Everything that's yours rather than the code's lives outside the repository,
 in `~/PokemonData` (or the folder named by the `POKEMON_DATA_DIR` environment
 variable), which is created on first use: the RareCandy export and login
-session, `missing_cards.csv`, `ordered.txt` and `ordered_arrived.txt`,
+session, `missing_cards.csv`, `ordered.txt`, `ordered_arrived.txt` and `emails_filed.txt`,
 `missing_cards.html`, `offers.csv`, `price_guide.csv`, `price_table.html`, the Cardmarket wants
 list, `.env`, the `.price_cache/` folder and `nightly_search.log`. Every
 default path below is in that folder, and a file given on the command line
@@ -572,6 +572,27 @@ only one of the cards that fit is in `missing_prints.csv`, Claude uses that
 one and ends the line with "(id picked from missing list)" so you can check
 it. A card it still can't place goes in by name: fix those lines by hand,
 because only lines with a card id show as ordered on the pages.
+
+### Filing the emails of orders that have arrived
+
+Once every card of an order has arrived (no line of it is left in
+`ordered.txt`, other than cancelled ones), `nightly_search.sh` has Claude
+move that order's emails out of your Inbox into `Inbox/Orders/Pokemon`
+(set `ARRIVED_EMAIL_FOLDER` to another path). That's its confirmation,
+payment, dispatch and tracking emails, and the seller's messages about it.
+An email that also covers an order still on its way, such as Cardmarket's
+"Thank you for your purchase" for several shipments, stays put until
+they've all arrived. The prompt is in `arrived_emails_prompt.txt` and
+the script is `arrived_emails.sh`, which runs right after missing_cards.py.
+
+Claude may only search, read and move email and read `~/PokemonData`. It
+can't delete or reply. Each order Claude finishes is added to
+`emails_filed.txt` in `~/PokemonData`, so it's filed only once; an order it
+didn't get to is tried again the next night. When nothing new has arrived,
+Claude isn't started. No more than `ARRIVED_EMAIL_MAX_ORDERS` (default 25)
+orders go per night, so a backlog of older orders clears over a few
+nights. `python ordered.py arrived-orders ~/PokemonData/ordered.txt` lists
+what's waiting.
 
 ## How it works
 

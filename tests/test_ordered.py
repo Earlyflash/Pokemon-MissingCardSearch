@@ -122,3 +122,32 @@ class SortFileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ArrivedOrdersTests(unittest.TestCase):
+    def write(self, d, name, text):
+        with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def test_only_fully_arrived_unfiled_orders(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.write(d, "ordered.txt",
+                       "me01-002 | 2026-10-01 | Cardmarket | 222 | seller B | still coming\n"
+                       "# cancelled me01-003 | 2026-10-01 | Cardmarket | 111 | seller A | refunded\n")
+            self.write(d, ordered.ARRIVED_NAME,
+                       "me01-001 | 2026-10-01 | Cardmarket | 111 | seller A | x | arrived 2026-10-09\n"
+                       "me01-004 | 2026-10-01 | Cardmarket | 111 | seller A | y | arrived 2026-10-09\n"
+                       "me01-005 | 2026-10-01 | Cardmarket | 222 | seller B | z | arrived 2026-10-09\n"
+                       "me01-006 | 2026-10-02 | Deckd | D-9 | w | arrived 2026-10-10\n"
+                       "me01-007 | 2026-10-03 | CardCargo | 5 | v | arrived 2026-10-10\n"
+                       "me01-008 | arrived 2026-10-10\n")
+            self.write(d, ordered.FILED_NAME, "cardcargo | 5 | 2 emails moved | filed 2026-10-10\n")
+            orders = ordered.arrived_orders(os.path.join(d, "ordered.txt"))
+            # 111 is done (its cancelled card doesn't hold it up), 222 still
+            # has a card on order, CardCargo 5 is filed, the last line has no order.
+            self.assertEqual(list(orders), [("Cardmarket", "111"), ("Deckd", "D-9")])
+            self.assertEqual(len(orders[("Cardmarket", "111")]), 2)
+
+    def test_missing_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(ordered.arrived_orders(os.path.join(d, "ordered.txt")), {})

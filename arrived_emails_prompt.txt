@@ -1,0 +1,42 @@
+Every card of the Pokémon TCG orders listed at the end has now arrived. File
+their emails: move each order's emails from my Inbox to the mail folder named
+at the end (a path such as "Inbox/Orders/Pokemon": a folder inside a folder).
+
+First find that folder's id. Read mail:///folders/ (the folder list) and,
+if the folder isn't in it, follow the path down one folder at a time by
+reading mail:///folders/<id> of each folder on it and taking its child of
+the next name (names match ignoring case). If you can't find the folder,
+stop: move nothing and say so.
+
+Then, for each order (a shop and an order number, followed by the order's
+cards from ordered_arrived.txt as notes), search the Inbox only (folderName
+"Inbox") for the order number. An email belongs to the order when it's from
+that shop (or the marketplace, such as Cardmarket or eBay) and is about that
+order: its confirmation, payment, dispatch, shipping, tracking and delivery
+emails, and the shop's or seller's messages about it. On Cardmarket each
+order number is one seller's shipment ("Shipment 1305475949 from KardKafe:
+Shipping confirmation"); a "Cardmarket message from <seller>" belongs to the
+order when it names the order number, or when it's from the order's seller
+(the "seller <name>" note) and ordered.txt in the current folder has no
+other order from that seller. A delivery company's email ("Your Royal Mail
+parcel is on its way") belongs when it names the order number.
+
+Leave an email where it is if:
+- it also covers an order that still has a line in ordered.txt (not one
+  starting with "#"), such as Cardmarket's "Thank you for your purchase" or
+  "We have received your ... transfer" naming several shipments; or
+- you aren't sure it belongs to one of these orders.
+
+Move emails with outlook_batch_modify_labels (up to 5 per call) and its
+moveToFolderId, changing nothing else: no categories, nothing deleted, no
+replies. Read ordered.txt and ordered_arrived.txt in the current folder as
+needed, but change no files.
+
+For every order you finished searching, write one line on its own, exactly:
+
+FILED | <shop> | <order number> | <number of emails moved>
+
+including orders with 0 emails moved (already filed by hand, say). Write no
+FILED line for an order you didn't get to or where a move failed, so it's
+tried again next time. Finish with a short summary: orders done, emails
+moved, and any email you left because you weren't sure.
