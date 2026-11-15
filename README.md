@@ -34,7 +34,7 @@ Everything that's yours rather than the code's lives outside the repository,
 in `~/PokemonData` (or the folder named by the `POKEMON_DATA_DIR` environment
 variable), which is created on first use: the RareCandy export and login
 session, `missing_cards.csv`, `ordered.txt`, `ordered_arrived.txt` and `emails_filed.txt`,
-`missing_cards.html`, `offers.csv`, `price_guide.csv`, `price_table.html`, the Cardmarket wants
+`missing_cards.html`, `offers.csv`, `price_guide.csv`, `price_table.html`, `deals_alerted.txt`, the Cardmarket wants
 list, `.env`, the `.price_cache/` folder and `nightly_search.log`. Every
 default path below is in that folder, and a file given on the command line
 is read from or written to exactly where you say.
@@ -364,6 +364,36 @@ Chromium can't start its sandbox; on Debian, also add
 e.g. `45m`, to change that) so a stuck run can't hold up the search. Each
 script trims its log before writing to it, keeping the last `LOG_LINES`
 lines (5000 for the orders log, 20000 for the search log).
+
+### Deals email
+
+`deals.py` lists the missing cards whose cheapest ungraded listing in the
+last price search is under their Cardmarket trend price or their PulseAPI
+market price (the CM and Pulse prices on the set overview), leaving out
+cards in `ordered.txt`:
+
+```bash
+python deals.py                  # print them
+python deals.py --min-under 10   # only cards at least 10% under
+```
+
+`deals_email.sh` emails them to you, through Claude Code and your Microsoft
+365 email like the order emails (Claude may only send email and look up your
+address). Schedule it for 7am, after the overnight search:
+
+```
+0 7 * * * /path/to/Pokemon-MissingCardSearch/deals_email.sh
+```
+
+It only emails when there's a deal it hasn't emailed before: a card's new
+cheapest listing, or the same listing cheaper. The email still lists every
+current deal, new ones first and marked NEW, each linking to the listing,
+with the Cardmarket and PulseAPI prices and how far under them it is.
+Emailed deals are noted in `deals_alerted.txt` in `~/PokemonData`. Settings,
+in the environment or `~/PokemonData/.env`: `DEALS_EMAIL_TO` (default: your
+own address), `DEALS_MIN_UNDER` (a percentage; default 0, any amount under)
+and `DEALS_EVERY_DAY=1` to email every morning there are any deals. What it
+did goes to `nightly_search.log`.
 
 ### Reading the pages online
 
