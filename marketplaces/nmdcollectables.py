@@ -44,7 +44,7 @@ MAX_PAGES = 100  # safety stop
 # Cards' names differ.
 SET_IDS = dict(TOTALCARDS_SET_IDS)
 SET_IDS.update({normalize_text(name): set_id for name, set_id in {
-    "Mega Dream": "M2a", "Shiny Treasure": "SV4a", "Terastal Festival": "SV8a", "Triple Beat": "SV1a",
+    "30th Celebration": "M6a", "Mega Dream": "M2a", "Shiny Treasure": "SV4a", "Terastal Festival": "SV8a", "Triple Beat": "SV1a",
 }.items()})
 
 NUMBER = re.compile(r"(?<![\w/])(?P<number>\d+)/(?P<total>\d+)(?![\w/])")

@@ -59,6 +59,7 @@ class ParseTests(unittest.TestCase):
             ("Tandemaus - 064/078 - Common - sv1v - Violet ex", "Violet EX", "sv1v"),
             ("Greedent - 314/190 - Baby Shiny - Shiny Treasure EX", "Shiny Treasure", "sv4a"),
             ("Snorunt - 200/193 - Art Rare - Mega Dream EX", "Mega Dream", "m2a"),
+            ("Gengar ex - 131/103 - SAR - 30th Celebration - m6a", "30th Celebration", "m6a"),
         ]:
             self.assertEqual(nmdcollectables.parse_product(product(title, product_type))["set_id"], set_id, title)
 
