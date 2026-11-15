@@ -466,7 +466,7 @@ class MainTests(unittest.TestCase):
             page = self.html_page("--ordered", ordered)
         self.assertIn('title="Ordered from Cardmarket"', page)
         self.assertIn('title="Ordered"', page)
-        self.assertEqual(page.count('<li class="card ordered">'), 2)
+        self.assertEqual(page.count('<li class="card ordered"'), 2)
         self.assertIn("me01 · 2/3 owned · 1 ordered", page)
         self.assertIn('<span class="ord">Ordered</span>', page)
         # Without an ordered.txt, nothing is marked.
@@ -474,6 +474,14 @@ class MainTests(unittest.TestCase):
             page = self.html_page("--ordered", os.path.join(d, "ordered.txt"))
         self.assertNotIn("card ordered", page)
         self.assertNotIn('class="ord"', page)
+
+    def test_html_has_prices_from_the_last_search(self):
+        page = self.html_page()
+        # Each card carries its id for the page's script to put prices on,
+        # and the prices block is there even with no price_search.py CSVs.
+        self.assertIn('<li class="card" data-id="M2a-003">', page)
+        self.assertIn('<script id="card-prices" type="application/json">', page)
+        self.assertIn('id="prices" checked', page)
 
     def test_card_images(self):
         ja = {"tcgdex_lang": "ja", "set_id": "M2a"}

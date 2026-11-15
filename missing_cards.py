@@ -65,6 +65,7 @@ import binder_cover  # noqa: E402  (path set up just above)
 from binder_cover import TCGDEX_BASE, TCGDEX_LANGS  # noqa: E402
 from marketplaces.base import FINISH_NORMAL, FINISHES, finish_key  # noqa: E402
 from marketplaces.cardmarket import card_variants, product_id  # noqa: E402
+from card_prices import prices_block, prices_for  # noqa: E402
 from ordered import card_key, default_arrived_path, prune_arrived, read_ordered_shops  # noqa: E402
 
 # RareCandyExporter writes a full language name per card (detected from the
@@ -756,17 +757,33 @@ section.has-open .hint { display: none; }
 .pics .card { position: relative; }
 .pics .card .gem { position: absolute; top: 8px; right: 8px; font-size: 13px; padding: 3px 10px 3px 9px;
                    box-shadow: 0 0 0 2px #fff, 0 2px 8px rgba(0, 0, 0, .45); }
-.pics .card.ordered a { outline: 3px solid var(--gem); outline-offset: -1px; }
-.card a { display: none; }
+.pics .card.ordered a.pic { outline: 3px solid var(--gem); outline-offset: -1px; }
+.card a.pic { display: none; }
 .pics .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 16px; }
 .pics .card { flex-direction: column; gap: 1px; font-size: 13px; padding: 0; }
-.pics .card a { display: block; width: 100%; aspect-ratio: 63 / 88; border-radius: 8px; margin-bottom: 6px;
+.pics .card a.pic { display: block; width: 100%; aspect-ratio: 63 / 88; border-radius: 8px; margin-bottom: 6px;
                 background: var(--track); overflow: hidden; box-shadow: var(--shadow);
                 transition: transform .15s ease, box-shadow .15s ease; }
-.pics .card a:hover { transform: translateY(-3px) scale(1.02); box-shadow: var(--lift); }
+.pics .card a.pic:hover { transform: translateY(-3px) scale(1.02); box-shadow: var(--lift); }
 .pics .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pics .card img.broken { display: none; }
 .pics .card .cname { font-weight: 600; }
+.card { flex-wrap: wrap; }
+.px { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0 12px; margin: -3px 0 3px 55px;
+      font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.px a, .px span { color: inherit; text-decoration: none; white-space: nowrap; }
+.px a:hover b { text-decoration: underline; }
+.px i { font-style: normal; margin-right: 4px; }
+.px b { color: var(--text); font-weight: 600; }
+.px .none { display: none; }
+.pics .card { flex-wrap: nowrap; }
+.pics .px { flex-basis: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 4px;
+            margin: 5px 0 0; padding-top: 5px; border-top: 1px solid var(--line); }
+.pics .px > * { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.pics .px i { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; margin: 0; }
+.pics .px b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+.pics .px .none b { color: var(--muted); font-weight: 400; }
+body.noprices .px, body.noprices #prices-asof { display: none; }
 details.unmatched { margin-top: 44px; color: var(--muted); }
 details.unmatched summary { cursor: pointer; font-weight: 600; }
 details.unmatched ul { padding-left: 20px; font-size: 14px; }
@@ -782,6 +799,46 @@ details.unmatched ul { padding-left: 20px; font-size: 14px; }
 """
 
 HTML_SCRIPT = """
+(function () {
+  const data = JSON.parse(document.getElementById('card-prices').textContent);
+  const cur = {GBP: '£', EUR: '€', USD: '$'}[data.currency] || data.currency + ' ';
+  const labels = [['pulse', 'Pulse', 'PulseAPI UK market price'],
+                  ['cm', 'CM', 'Cardmarket'], ['low', 'Low', 'Cheapest listing online']];
+  let any = false;
+  document.querySelectorAll('li.card[data-id]').forEach(li => {
+    const p = data.cards[li.dataset.id];
+    if (!p) return;
+    const row = document.createElement('span');
+    row.className = 'px';
+    for (const [key, label, what] of labels) {
+      // Every price gets a slot, so they line up under the pictures.
+      const [price, url, hover] = p[key] || [];
+      const a = document.createElement(price ? 'a' : 'span');
+      if (price) {
+        a.href = url; a.target = '_blank'; a.rel = 'noopener';
+        a.title = what + (hover ? ' · ' + hover : '');
+      } else {
+        a.className = 'none'; a.title = what + ': not found';
+      }
+      const i = document.createElement('i'), b = document.createElement('b');
+      i.textContent = label; b.textContent = price ? cur + price : '–';
+      a.append(i, b);
+      row.append(a);
+    }
+    li.append(row);
+    any = true;
+  });
+  const asof = document.getElementById('prices-asof');
+  if (any && data.asof) asof.textContent = ' · prices from ' + data.asof;
+  const sw = document.getElementById('prices');
+  if (!any) { sw.closest('label').style.display = 'none'; return; }
+  const show = on => {
+    document.body.classList.toggle('noprices', !on);
+    try { localStorage.setItem('noprices', on ? '' : '1'); } catch (e) {}
+  };
+  sw.addEventListener('change', () => show(sw.checked));
+  try { if (localStorage.getItem('noprices')) { sw.checked = false; show(false); } } catch (e) {}
+})();
 const box = document.getElementById('pics');
 function loadPics(root) {
   if (!document.body.classList.contains('pics')) return;
@@ -792,10 +849,14 @@ function loadPics(root) {
 function showPics(on) {
   document.body.classList.toggle('pics', on);
   document.querySelectorAll('.panel:not([hidden])').forEach(loadPics);
-  try { localStorage.setItem('pics', on ? '1' : ''); } catch (e) {}
+  try { localStorage.setItem('pics', on ? '1' : '0'); } catch (e) {}
 }
 box.addEventListener('change', () => showPics(box.checked));
-try { if (localStorage.getItem('pics')) { box.checked = true; showPics(true); } } catch (e) {}
+// Pictures are on unless they've been turned off here ('' was off before
+// they were on by default).
+try { const saved = localStorage.getItem('pics'); if (saved === '0' || saved === '') box.checked = false; }
+catch (e) {}
+showPics(box.checked);
 function closeAll(section) {
   section.querySelectorAll('.panel').forEach(p => p.hidden = true);
   section.querySelectorAll('button.tile').forEach(t => t.setAttribute('aria-expanded', 'false'));
@@ -891,9 +952,9 @@ def _set_panel(r, panel_id, ordered=None):
     for c in r["missing"]:
         name, name_en = c.get("name") or "", c.get("name_en")
         small, large = card_images(r, c)
-        pic = (f'<a href="{e(large)}" target="_blank" rel="noopener">'
+        pic = (f'<a class="pic" href="{e(large)}" target="_blank" rel="noopener">'
                f'<img data-src="{e(small)}" alt="" loading="lazy" '
-               f'onerror="this.className=\'broken\'"></a>' if small else "<a></a>")
+               f'onerror="this.className=\'broken\'"></a>' if small else '<a class="pic"></a>')
         en = f'<span class="en">{e(name_en)}</span>' if name_en and name_en != name else ""
         shops = _ordered_from(c, ordered or {})
         cls, gem = "card", ""
@@ -901,7 +962,7 @@ def _set_panel(r, panel_id, ordered=None):
             on_order += 1
             title = f"Ordered from {', '.join(shops)}" if shops else "Ordered"
             cls, gem = "card ordered", f'<span class="gem" title="{e(title)}">Ordered</span>'
-        cards.append(f'<li class="{cls}">{pic}<span class="num">#{e(c.get("localId") or "?")}'
+        cards.append(f'<li class="{cls}" data-id="{e(c.get("id") or "")}">{pic}<span class="num">#{e(c.get("localId") or "?")}'
                      f'</span><span class="cname">{e(name)}</span>{en}{gem}</li>')
     pct = completion(r)
     return (f'<div class="panel {_tier(pct)}" id="{panel_id}" hidden>'
@@ -922,16 +983,19 @@ def _set_group(sets, prefix, ordered=None):
     return f'<div class="sets grid">{tiles}</div>{panels}'
 
 
-def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10, ordered=None):
+def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10, ordered=None,
+               prices=None):
     """A page to look over: a section per language, the one you own the most
     cards in first, split by series, newest first, with a tile per set
     coloured by how complete it is and saying how many cards it's missing,
     closest to finished first. Clicking a tile shows its missing cards under
     that series' tiles, one set per language at a time. Sets under
     `hide_below` percent complete are left out, and so is a series or
-    language with none at or above it, and out of every total. Card pictures are off until "Show
-    card pictures" is ticked, and then only the open set's are loaded. Missing
-    cards on order (`ordered`, from read_ordered_shops) are marked with a gem."""
+    language with none at or above it, and out of every total. Card pictures are on unless "Show
+    card pictures" is unticked, and only the open set's are loaded. Missing
+    cards on order (`ordered`, from read_ordered_shops) are marked with a gem.
+    Each missing card shows the prices in `prices` (see card_prices), which
+    price_search.py refreshes after each search."""
     e = html.escape
     shown = [r for r in [*results, *below] if completion(r) >= hide_below]
     hidden = {}
@@ -960,10 +1024,12 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
         f'<title>Missing Cards</title><style>{HTML_STYLE}</style></head><body><main>',
         '<header class="top"><div class="intro"><h1>Missing cards</h1>'
         f'<p class="sub">Sets under {hide_below:g}% complete are left out · updated '
-        f'{datetime.datetime.now():%d %b %Y, %H:%M}</p></div>'
+        f'{datetime.datetime.now():%d %b %Y, %H:%M}<span id="prices-asof"></span></p></div>'
         f'<div class="stats">{stats}</div></header>',
-        '<div class="controls"><label class="switch"><input type="checkbox" id="pics"><i></i>'
+        '<div class="controls"><label class="switch"><input type="checkbox" id="pics" checked><i></i>'
         'Show card pictures</label>'
+        '<label class="switch"><input type="checkbox" id="prices" checked><i></i>'
+        'Show prices</label>'
         '<label>Sort <select id="sort"><option value="pct">Most complete</option>'
         '<option value="missing">Fewest missing</option><option value="name">Set name</option>'
         '<option value="code">Set number</option>'
@@ -991,7 +1057,8 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
         items = "".join(f"<li>{e(n)} ({e(lang)}): {e(why)}</li>" for n, lang, why in unmatched)
         parts.append(f'<details class="unmatched"><summary>Couldn\'t check {len(unmatched)} '
                      f"set(s)</summary><ul>{items}</ul></details>")
-    parts.append(f"</main><script>{HTML_SCRIPT}</script></body></html>")
+    parts.append(f"</main>{prices_block(prices or {'cards': {}})}"
+                 f"<script>{HTML_SCRIPT}</script></body></html>")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(parts))
 
@@ -1101,7 +1168,8 @@ def main(argv=None):
     html_out = args.html or os.path.join(os.path.dirname(os.path.abspath(args.out)), HTML_NAME)
     ensure_parent(html_out)
     write_html(results, unmatched, html_out, below, args.min_complete, args.html_min_complete,
-               read_ordered_shops(args.ordered))
+               read_ordered_shops(args.ordered),
+               prices_for(os.path.dirname(os.path.abspath(args.out))))
     print(f"Wrote the set overview to {os.path.abspath(html_out)}")
     if args.json:
         ensure_parent(args.json)

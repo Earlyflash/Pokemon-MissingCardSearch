@@ -35,6 +35,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import marketplaces
 from marketplaces.base import (MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer, SearchContext,
                                finish_key)
+from card_prices import read_card_prices, refresh_html
 from data_dir import data_path, ensure_parent
 from ordered import read_ordered, read_ordered_shops
 
@@ -396,6 +397,16 @@ def redraw_html(groups, available, args):
                ordered=read_ordered_shops(args.ordered))
     print(f"Redrew the price table from {args.out} and {args.guide_out} (no marketplaces "
           f"searched) to {os.path.abspath(html_out)}")
+    refresh_overview(args)
+
+
+def refresh_overview(args):
+    """Put the prices just written into missing_cards.html (next to the
+    missing cards file), if missing_cards.py has written one there."""
+    overview = os.path.join(os.path.dirname(os.path.abspath(args.missing_json)),
+                            "missing_cards.html")
+    if refresh_html(overview, read_card_prices(args.out, args.guide_out)):
+        print(f"Updated the prices on {overview}")
 
 
 CURRENCY_SYMBOLS = {"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥"}
@@ -807,6 +818,7 @@ def main(argv=None):
     write_html(groups, listing_ranked, guide_ranked, plugins, currency, html_out,
                ordered=read_ordered_shops(args.ordered))
     print(f"Wrote the price table to {os.path.abspath(html_out)}")
+    refresh_overview(args)
 
 if __name__ == "__main__":
     main()

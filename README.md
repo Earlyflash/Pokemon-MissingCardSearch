@@ -145,15 +145,30 @@ Missing cards listed in `ordered.txt` (any print of them; see
 which names the shop each was ordered from when you hover over it, and each
 tile says how many of its missing cards are on order.
 
+Under each missing card is a short line of prices from the last
+[price search](#pricing-the-missing-cards), handy for pricing a card
+quickly at a card show: **Pulse** (PulseAPI's UK market price), **CM**
+(Cardmarket's trend price, converted to pounds; its cheapest "from" price
+when there's no trend) and **Low** (the cheapest ungraded listing any shop
+had). Under the pictures they sit in three columns, with a "–" for a
+price that wasn't found, so they line up from card to card. Each one links to where it came from, and hovering shows more (the
+shop, its condition, how many listings there were). The header says when
+the prices are from, and **Show prices** hides them. missing_cards.py uses
+the `offers.csv` and `price_guide.csv` next to `missing_cards.csv`, and
+price_search.py puts its fresh prices into the page after every search
+(`--html-only` too), so the overnight run keeps them up to date. Only cards
+in `missing_cards.csv`, i.e. sets at or over `--min-complete`, are searched,
+so cards from sets under the cut-off have no prices.
+
 Sets you've started but are under the `--min-complete` cut-off get tiles
 too, but sets under 10% complete (`--html-min-complete`) are left out, as
 is a series or language with none at 10% or more, and the totals at the
 top count only the sets shown. Sets that couldn't be checked are listed at
 the end.
 
-Tick **Show card pictures** to see each missing card's picture (click one for
-a larger version); the page remembers the choice. Pictures aren't loaded
-until then, and only for the set that's open. They come from TCGdex for English cards and from
+Each missing card's picture is shown (click one for a larger version);
+untick **Show card pictures** for a plain list, and the page remembers the
+choice. Pictures are only loaded for the set that's open. They come from TCGdex for English cards and from
 [scrydex](https://scrydex.com), where RareCandy's own pictures come from,
 for Japanese cards, which TCGdex has no pictures of. Cards neither has a
 picture of show an empty frame.
