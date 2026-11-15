@@ -826,6 +826,56 @@ class SearchContextTests(unittest.TestCase):
         self.assertEqual(sleeps, [1.5])
         self.assertEqual((ctx.fetched, ctx.cache_hits), (2, 1))
 
+    def test_shops_in_a_rate_group_share_one_pace(self):
+        """Two Shopify shops are paced together: the second one's request waits
+        for the group's next slot even though it has never asked before."""
+        class ShopA(EuroShop):
+            id, rate_group, min_interval = "shopa", "shopify", 0
+        class ShopB(EuroShop):
+            id, rate_group, min_interval = "shopb", "shopify", 0
+        sleeps, now, groups = [], [100.0], {}
+        make = lambda p: SearchContext(p, sleep=sleeps.append, clock=lambda: now[0],  # noqa: E731
+                                       rate_groups=groups)
+        a, b, alone = make(ShopA()), make(ShopB()), SearchContext(EuroShop(), sleep=sleeps.append,
+                                                                  clock=lambda: now[0],
+                                                                  rate_groups=groups)
+        with patch("urllib.request.urlopen", lambda req, timeout: self.FakeResponse(b"{}")):
+            a.fetch("https://a.example/1")
+            b.fetch("https://b.example/1")
+            alone.fetch("https://c.example/1")  # not in the group: no wait
+        self.assertEqual(sleeps, [1.0])
+        self.assertEqual(list(groups), ["shopify"])
+
+    def test_a_429_holds_back_the_whole_rate_group(self):
+        class ShopA(EuroShop):
+            id, rate_group, min_interval = "shopa", "shopify", 0
+        class ShopB(EuroShop):
+            id, rate_group, min_interval = "shopb", "shopify", 0
+        sleeps, now, groups = [], [100.0], {}
+        stream = io.StringIO()
+        a = SearchContext(ShopA(), sleep=sleeps.append, clock=lambda: now[0], rate_groups=groups,
+                          progress_stream=stream)
+        b = SearchContext(ShopB(), sleep=sleeps.append, clock=lambda: now[0], rate_groups=groups)
+        req = type("Req", (), {"full_url": "https://a.example/1"})()
+        answers = [self.http_error(req, 429), self.FakeResponse(b"{}"), self.FakeResponse(b"{}")]
+
+        def urlopen(req, timeout):
+            r = answers.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        with patch("urllib.request.urlopen", urlopen):
+            a.fetch("https://a.example/1")
+            sleeps.clear()
+            b.fetch("https://b.example/1")
+        # Shop A's 429 waited 30s (no Retry-After) and its retry took the
+        # slot at +30s; shop B, which never got a 429, still waits for the
+        # group's next slot, 2s (the doubled interval) after that.
+        self.assertEqual(sleeps, [32.0])
+        self.assertEqual(groups["shopify"].interval, 2.0)
+        self.assertIn("all shopify shops' requests 2s apart", stream.getvalue())
+
     def test_fetch_prints_a_progress_line_every_few_seconds(self):
         now, stream = [0.0], io.StringIO()
         ctx = SearchContext(EuroShop(), sleep=lambda s: None, clock=lambda: now[0],

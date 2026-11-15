@@ -98,6 +98,7 @@ class CardAttic(Marketplace):
     name = "The Card Attic"
     languages = {"ja"}     # this collection is Japanese singles only
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """[(product, parsed title)] for the Japanese singles collection,

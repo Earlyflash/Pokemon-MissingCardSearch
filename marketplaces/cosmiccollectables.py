@@ -127,6 +127,7 @@ class CosmicCollectables(Marketplace):
     name = "Cosmic Collectables"
     languages = {"ja"}     # this collection is Japanese singles (Korean copies are skipped)
     min_interval = 5.0     # Cloudflare challenges quicker repeat requests
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """(product, parsed title) for every product in the Japanese singles

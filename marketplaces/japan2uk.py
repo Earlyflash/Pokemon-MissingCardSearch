@@ -99,6 +99,7 @@ class Japan2UK(Marketplace):
     name = "Japan2UK"
     languages = {"ja"}     # these collections are Japanese cards only
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """Every product in the Japanese singles and graded collections,

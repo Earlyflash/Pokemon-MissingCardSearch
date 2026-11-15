@@ -274,6 +274,7 @@ class AberdeenCollectables(Marketplace):
     name = "Aberdeen Collectables"
     languages = set(LANGUAGES.values())
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """Every product in the raw singles and graded collections, fetched once per run."""

@@ -77,6 +77,7 @@ class TynesideTCG(Marketplace):
     name = "Tyneside TCG"
     languages = {"ja"}     # this collection is Japanese singles only
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """Every product in the Japanese singles collection, fetched once

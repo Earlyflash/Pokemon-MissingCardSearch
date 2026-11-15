@@ -248,7 +248,11 @@ doesn't, so its card lookups for Cardmarket are kept for 30 days instead, as
 a card's Cardmarket product never changes). If a site answers "429 Too Many
 Requests", the search waits as long as the site asks (30s, then 60s, then
 90s when it doesn't say), retries, and spaces that marketplace's requests
-further apart for the rest of the run; if a site can't be reached at all, an
+further apart for the rest of the run. Shopify counts one connection's
+requests across all its shops together, so the Shopify shops (all but
+DeckdHQ, R Adams, Midnight Cards, Cardmarket and PulseAPI) share one pace
+between them, one request a second in all, and a 429 to any of them holds
+all of them back and slows them down together; if a site can't be reached at all, an
 older cached copy is used and the progress line says so.
 
 When it's finished it prints a per-set summary (how many missing cards are for sale, and what

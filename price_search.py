@@ -787,9 +787,11 @@ def main(argv=None):
     print(f"Searching {', '.join(p.id for p in plugins)} for {n_cards} missing card(s) "
           f"across {len(groups)} set(s)...")
     cache_dir = None if args.no_cache else args.cache_dir
+    rate_groups = {}  # shared by the plugins whose sites share a rate limit (Shopify's)
     plugin_results = search_all(
         plugins, groups,
         lambda p: SearchContext(p, config={k: os.environ[k] for k in p.needs},
+                                rate_groups=rate_groups,
                                 cache_dir=cache_dir, cache_ttl=args.cache_ttl * 3600,
                                 verbose=args.verbose))
 

@@ -105,6 +105,7 @@ class JapanGameTCG(Marketplace):
     name = "Japan Game & TCG Market"
     languages = {"ja"}     # the shop sells Japanese cards (and a handful of Chinese ones, skipped)
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """Every product in the shop, with its parsed title, fetched once

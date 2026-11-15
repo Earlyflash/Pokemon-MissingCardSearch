@@ -81,6 +81,7 @@ class ThePokeStore(Marketplace):
     name = "The Poké Store"
     languages = {"ja"}     # this collection is Japanese singles only
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def _pages(self, ctx, url, key, **fields):
         rows_out = []

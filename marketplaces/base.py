@@ -105,6 +105,11 @@ class Marketplace:
     languages = None           # TCGdex language codes it sells, e.g. {"en", "ja"}; None = all
     needs = ()                 # environment variables it requires, e.g. ("EBAY_APP_ID",)
     min_interval = 1.0         # minimum seconds between this plugin's HTTP requests
+    # Plugins whose sites share one rate limit name the same group, and their
+    # requests together are paced to RATE_GROUPS[group] seconds apart (see
+    # RateGroup). Shopify throttles one connection across all its shops, so
+    # every Shopify shop is in "shopify".
+    rate_group = None
     # True for a site that only publishes a price per card (e.g. its cheapest
     # copy in any language or condition) rather than individual listings. The
     # core reports those prices separately and never ranks them against real
@@ -156,6 +161,45 @@ MAX_RATE_LIMIT_WAIT = 120
 MAX_MIN_INTERVAL = 10.0
 
 
+# Seconds between requests across all of a rate group's plugins, at the
+# start of a run. 11 Shopify shops each asking once a second got 427 429s
+# from Shopify on 2026-11-15, and old cached pages for 10 of them; at one a
+# second between them all, the ~150 pages they need take under 3 minutes.
+RATE_GROUPS = {"shopify": 1.0}
+MAX_GROUP_INTERVAL = 5.0
+
+
+class RateGroup:
+    """Paces the requests of every plugin sharing one site's rate limit:
+    each takes the next free slot, `interval` seconds after the last. A 429
+    to any of them holds the whole group back until its wait is over and
+    spaces the group's requests twice as far apart (up to
+    MAX_GROUP_INTERVAL), since the limit is the group's, not the plugin's."""
+
+    def __init__(self, name, interval, clock=time.monotonic, sleep=time.sleep):
+        self.name = name
+        self.interval = interval
+        self._clock = clock
+        self._sleep = sleep
+        self._next = None
+        self._lock = threading.Lock()
+
+    def wait_turn(self):
+        with self._lock:
+            now = self._clock()
+            slot = now if self._next is None else max(now, self._next)
+            self._next = slot + self.interval
+        if slot > now:
+            self._sleep(slot - now)
+
+    def rate_limited(self, wait):
+        """A 429 asked for `wait` seconds: nobody in the group goes before then."""
+        with self._lock:
+            self.interval = min(max(self.interval * 2, 1.0), MAX_GROUP_INTERVAL)
+            self._next = max(self._next or 0, self._clock() + wait)
+            return self.interval
+
+
 def retry_after(headers, default):
     """Seconds a 429's Retry-After header asks for (a number or an HTTP
     date), or `default` when it doesn't say."""
@@ -183,7 +227,7 @@ class SearchContext:
 
     def __init__(self, plugin, config=None, cache_dir=None, cache_ttl=6 * 3600,
                  verbose=False, sleep=time.sleep, clock=time.monotonic,
-                 progress_interval=5.0, progress_stream=None):
+                 progress_interval=5.0, progress_stream=None, rate_groups=None):
         self.plugin_id = plugin.id
         self.config = config or {}
         self.cache_dir = cache_dir
@@ -196,6 +240,15 @@ class SearchContext:
         self._lock = threading.Lock()
         self._sleep = sleep
         self._clock = clock
+        # The plugin's RateGroup, shared through `rate_groups` (one dict per
+        # run, {group name: RateGroup}) with the other plugins in its group.
+        self._group = None
+        group = getattr(plugin, "rate_group", None)
+        if group:
+            groups = {} if rate_groups is None else rate_groups
+            if group not in groups:
+                groups[group] = RateGroup(group, RATE_GROUPS.get(group, 1.0), clock, sleep)
+            self._group = groups[group]
         self.fetched = 0       # pages downloaded this run
         self.cache_hits = 0    # pages read from the on-disk cache without asking the site
         self.unchanged = 0     # cached pages the site said were unchanged (304 Not Modified)
@@ -250,6 +303,8 @@ class SearchContext:
                 wait = self._min_interval - (self._clock() - self._last_request)
                 if wait > 0:
                     self._sleep(wait)
+            if self._group:
+                self._group.wait_turn()
             self._last_request = self._clock()
 
     def _get(self, url, headers, timeout):
@@ -277,8 +332,12 @@ class SearchContext:
                     raise
                 with self._lock:
                     self._min_interval = min(max(self._min_interval * 2, 1.0), MAX_MIN_INTERVAL)
+                spacing = f"{self._min_interval:g}s apart"
+                if self._group:
+                    spacing += (f", and all {self._group.name} shops' requests "
+                                f"{self._group.rate_limited(wait):g}s apart")
                 self.progress(f"rate limited (429); waiting {wait:.0f}s, then spacing requests "
-                              f"{self._min_interval:g}s apart")
+                              + spacing)
                 self._sleep(wait)
 
     def fetch(self, url, headers=None, as_json=False, timeout=30, max_age=None):

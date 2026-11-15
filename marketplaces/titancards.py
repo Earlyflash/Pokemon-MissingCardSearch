@@ -157,6 +157,7 @@ class TitanCards(Marketplace):
     name = "Titan Cards"
     languages = {"en", "ja"}   # almost all English; a few Japanese cards
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """[(product, parsed title)] for the singles collection, fetched

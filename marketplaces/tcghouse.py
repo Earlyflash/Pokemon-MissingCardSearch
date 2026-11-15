@@ -142,6 +142,7 @@ class TCGHouse(Marketplace):
     name = "TCG House"
     languages = {"en", "ja"}
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """Every product in the singles collection, fetched once per run."""

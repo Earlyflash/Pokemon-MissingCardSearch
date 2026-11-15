@@ -176,6 +176,7 @@ class TotalCards(Marketplace):
     name = "Total Cards"
     languages = {"ja"}     # this collection is Japanese singles; other languages are filtered out
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """Every product in the Japanese singles collection, fetched once per run."""

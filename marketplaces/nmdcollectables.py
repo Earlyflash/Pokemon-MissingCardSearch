@@ -72,6 +72,7 @@ class NMDCollectables(Marketplace):
     name = "NMD Collectables"
     languages = {"ja"}     # the shop sells Japanese cards only
     min_interval = 1.0
+    rate_group = "shopify"  # Shopify throttles one connection across all its shops
 
     def catalogue(self, ctx):
         """Every product in the shop, fetched once per run."""
