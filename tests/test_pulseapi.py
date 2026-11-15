@@ -2,6 +2,7 @@
 PulseAPI's documentation (fetched 2026-09-24), trimmed, so no network or API
 key is needed."""
 import io
+from contextlib import redirect_stdout
 import os
 import sys
 import tempfile
@@ -226,6 +227,31 @@ class PulseAPITests(unittest.TestCase):
         ctx = FakeContext(SV151, cache_dir=cache)
         plugin.search_set([card("zz1-001", "Nobody")], ctx)
         self.assertTrue(ctx.queries)
+
+    def test_a_card_sent_without_a_price_keeps_its_last_one_and_is_logged(self):
+        cache, now = tempfile.mkdtemp(), [1_763_000_000.0]
+        plugin = pulseapi.PulseAPI(sleep=self.slept.append, clock=lambda: now[0])
+        cards = [card("sv03.5-199"), card("sv03.5-001"), card("sv03.5-150")]
+        plugin.search_set(cards, FakeContext(SV151, cache_dir=cache))
+        # The next night PulseAPI sends Charizard with no price at all.
+        blank = [dict(h, prices={"market_price": None}, synced_at="2026-11-15T03:05:03Z")
+                 if h["card_number"] == "199/165" else h for h in SV151]
+        now[0] += 86400
+        out = io.StringIO()
+        with redirect_stdout(out):
+            offers = plugin.search_set(cards, FakeContext(blank, cache_dir=cache))
+        charizard = [o for o in offers if o.card_id == "sv03.5-199"]
+        self.assertEqual([o.price for o in charizard], [Decimal("269.16")])
+        self.assertIn("last seen", charizard[0].title)
+        log = out.getvalue()
+        self.assertIn("1 card(s) not on PulseAPI: sv03.5-150", log)
+        self.assertIn("1 of 2 card(s) came back with no price (sv03.5-199; PulseAPI synced "
+                      "2026-11-15T03:05:03Z); last price seen used for 1 (sv03.5-199)", log)
+        # After LAST_PRICE_DAYS the old price isn't used any more.
+        now[0] += pulseapi.LAST_PRICE_DAYS * 86400
+        with redirect_stdout(io.StringIO()):
+            offers = plugin.search_set(cards, FakeContext(blank, cache_dir=cache))
+        self.assertEqual([o.card_id for o in offers], ["sv03.5-001"])
 
     def test_skips_languages_pulsetcg_has_no_sets_for(self):
         german = MissingCard("sv03.5-199", "sv03.5", "151", "199", "", "German", "en")

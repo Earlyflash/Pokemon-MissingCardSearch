@@ -776,6 +776,8 @@ section.has-open .hint { display: none; }
 .px i { font-style: normal; margin-right: 4px; }
 .px b { color: var(--text); font-weight: 600; }
 .px .none { display: none; }
+.px .old b { color: var(--muted); font-weight: 500; }
+.px .old b::after { content: "*"; }
 .pics .card { flex-wrap: nowrap; }
 .pics .px { flex-basis: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 4px;
             margin: 5px 0 0; padding-top: 5px; border-top: 1px solid var(--line); }
@@ -817,6 +819,7 @@ HTML_SCRIPT = """
       if (price) {
         a.href = url; a.target = '_blank'; a.rel = 'noopener';
         a.title = what + (hover ? ' · ' + hover : '');
+        if (/last seen/.test(hover || '')) a.className = 'old';
       } else {
         a.className = 'none'; a.title = what + ': not found';
       }

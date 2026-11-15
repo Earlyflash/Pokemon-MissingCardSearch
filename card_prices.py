@@ -4,7 +4,8 @@ Prices for the set overview (missing_cards.html)
 Each missing card on the overview page shows three prices from
 price_search.py's last run, for pricing a card quickly at a card show:
 
-- **Pulse**: PulseAPI's UK market price (price_guide.csv).
+- **Pulse**: PulseAPI's UK market price (price_guide.csv), greyed out when
+  it's the last one PulseAPI sent rather than tonight's.
 - **CM**: Cardmarket's trend price, converted with the rate that run used,
   or its cheapest-copy "from" price when the price file has no trend
   (price_guide.csv).
@@ -66,7 +67,7 @@ def _shop_names():
 
 def read_card_prices(offers_path, guide_path, names=None):
     """{"asof": "15 Nov, 07:31" or None, "currency": "GBP",
-        "cards": {card id: {"pulse": [price, url], "cm": [price, url, hover],
+        "cards": {card id: {"pulse": [price, url, hover], "cm": [price, url, hover],
                             "low": [price, url, hover]}}}
     from price_search.py's CSVs; a card only has the prices that were found.
     Prices are strings with two decimals."""
@@ -85,7 +86,7 @@ def read_card_prices(offers_path, guide_path, names=None):
             continue
         currency = gcol[len("Price ("):-1]
         if r["Marketplace"] == "pulseapi":
-            put(r["TCGdex Card ID"], "pulse", price, [r["URL"]])
+            put(r["TCGdex Card ID"], "pulse", price, [r["URL"], r["Listing Title"] or ""])
         elif r["Marketplace"] == "cardmarket":
             hover = f"Cheapest copy {currency} {price:.2f} (any language or condition)"
             m, listed = _TREND.search(r["Listing Title"] or ""), _money(r["Listed Price"])

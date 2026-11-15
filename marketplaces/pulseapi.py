@@ -32,7 +32,16 @@ read and cards match on set plus card number, so a set costs a few requests
 however many cards are missing from it. Which PulseAPI set (or none) each
 TCGdex set turned out to be is kept in the cache folder, so later runs skip
 straight to reading the set.
+
+PulseAPI sometimes sends a card with every price empty (on 2026-11-15 its
+03:05 sync blanked 37 of 66 cards that were priced the night before, and
+they were back that evening). So the last price each product had is kept in
+the cache folder too, and a card that comes back without one is priced at
+that, for up to LAST_PRICE_DAYS, with the title saying when it was seen.
+Each set's cards that came back without a price, or weren't there at all,
+are logged with PulseAPI's synced_at time, to work out why it happens.
 """
+import datetime
 import difflib
 import json
 import os
@@ -55,6 +64,8 @@ MAX_RETRY_WAIT = 65      # seconds; longer means a daily or monthly quota, not w
 # v2: v1 could hold a wrong set found by a single name match (M2 -> l2_jp).
 SET_MAP_FILE = "set_ids_v2.json"
 SET_MAP_TTL = {True: 30 * 86400, False: 7 * 86400}  # found / not found; new sets appear daily
+LAST_PRICES_FILE = "last_prices.json"
+LAST_PRICE_DAYS = 30     # how long a product's last price stands in for a missing one
 # Card languages PulseTCG has sets for (its site lists English, Japanese and
 # Chinese sets); a German or French print would only waste requests.
 LANGUAGES = {"English", "Japanese", "Chinese"}
@@ -84,6 +95,10 @@ def set_id_guesses(set_id, language="English"):
     if m:
         guesses.append(f"{m.group(1)}{m.group(2)}{'pt5' if m.group(3) else ''}")
     return list(dict.fromkeys(g for g in guesses if g))
+
+
+# Titles of prices PulseAPI sent this run (not a remembered one).
+LIVE_NOTES = ("UK market price:", "UK+US market price:")
 
 
 def is_plain_copy(hit):
@@ -192,6 +207,32 @@ class PulseAPI(Marketplace):
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=1, sort_keys=True)
 
+    # -- each product's last price, for nights PulseAPI sends none --
+
+    def _last_prices_path(self, ctx):
+        return os.path.join(ctx.cache_dir, self.id, LAST_PRICES_FILE) if ctx.cache_dir else None
+
+    def _last_prices(self, ctx):
+        if "last_prices" not in ctx.state:
+            path, data = self._last_prices_path(ctx), {}
+            if path and os.path.isfile(path):
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        data = json.load(f)
+                except (OSError, ValueError):
+                    data = {}
+            ctx.state["last_prices"] = data
+        return ctx.state["last_prices"]
+
+    def _save_last_prices(self, ctx):
+        path = self._last_prices_path(ctx)
+        if path and "last_prices" in ctx.state:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = f"{path}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(ctx.state["last_prices"], f, indent=0, sort_keys=True)
+            os.replace(tmp, path)
+
     def find_set(self, cards, ctx):
         """(PulseAPI set_id, first page of its cards) for these missing cards,
         or (None, []) when PulseAPI doesn't seem to have the set."""
@@ -258,25 +299,53 @@ class PulseAPI(Marketplace):
                     f"in {cards[0].language}")
             return []
         by_number = self.set_cards(set_id, cards[0].language, first_page, ctx)
-        offers = []
+        offers, absent, unpriced, reused, synced = [], [], [], [], set()
         for card in cards:
             hits = by_number.get(norm_number(card.local_id), [])
+            if not hits:
+                absent.append(card.card_id)
+                continue
             # Several products share a number when a card has more than one
             # finish (e.g. a reverse holo). Missing cards don't say which
             # finish, so prefer the standard print, else offer each.
             standard = [h for h in hits if not h.get("material") and not h.get("promo_info")]
             chosen = standard or hits
+            found = []
             for h in chosen:
-                offer = self.offer(card, h, MATCH_EXACT if len(chosen) == 1 else MATCH_LIKELY)
+                offer = self.offer(card, h, MATCH_EXACT if len(chosen) == 1 else MATCH_LIKELY, ctx)
                 if offer:
-                    offers.append(offer)
+                    found.append(offer)
+            if not any(o.title.startswith(LIVE_NOTES) for o in found):
+                unpriced.append(card.card_id)
+                synced.update(h.get("synced_at") for h in chosen if h.get("synced_at"))
+                if found:
+                    reused.append(card.card_id)
+            offers.extend(found)
+        self._save_last_prices(ctx)
+        name = f"{cards[0].set_name} ({set_id})"
+        if absent:
+            ctx.log(f"{name}: {len(absent)} card(s) not on PulseAPI: {', '.join(absent)}")
+        if unpriced:
+            ctx.log(f"{name}: {len(unpriced)} of {len(cards) - len(absent)} card(s) came back "
+                    f"with no price ({', '.join(unpriced)}; PulseAPI synced "
+                    f"{', '.join(sorted(synced)) or 'at an unknown time'}); "
+                    f"last price seen used for {len(reused)}"
+                    + (f" ({', '.join(reused)})" if reused else ""))
         return offers
 
-    def offer(self, card, hit, match):
+    def offer(self, card, hit, match, ctx=None):
         prices = hit.get("prices") or {}
         price, note = money(prices.get("market_price")), "UK market price"
         if price is None:
             price, note = money(prices.get("market_price_global")), "UK+US market price"
+        last = self._last_prices(ctx) if ctx is not None else {}
+        key = str(hit.get("product_id") or hit.get("slug") or "")
+        if price is not None and key:
+            last[key] = {"price": str(price), "note": note, "at": self._clock()}
+        elif key in last and self._clock() - last[key].get("at", 0) <= LAST_PRICE_DAYS * 86400:
+            seen = datetime.datetime.fromtimestamp(last[key]["at"])
+            price = Decimal(last[key]["price"])
+            note = f"{last[key].get('note', 'UK market price')} last seen {seen:%d %b} (none sent today)"
         if price is None:
             return None
         variant = ", ".join(v for v in (hit.get("material"), hit.get("promo_info")) if v)

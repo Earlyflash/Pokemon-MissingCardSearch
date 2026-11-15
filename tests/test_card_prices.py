@@ -45,7 +45,7 @@ class ReadCardPricesTests(unittest.TestCase):
                        "Cheapest copy on Cardmarket (any language or condition); trend EUR 19.97",
                        url="cm")])
         card = p["cards"]["M2a-236"]
-        self.assertEqual(card["pulse"], ["19.25", "p"])
+        self.assertEqual(card["pulse"], ["19.25", "p", ""])
         # Trend converted at the run's rate: 19.97 * 14.62 / 17.5.
         self.assertEqual(card["cm"][:2], ["16.68", "cm"])
         self.assertIn("Trend EUR 19.97", card["cm"][2])
