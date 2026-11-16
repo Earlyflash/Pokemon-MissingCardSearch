@@ -8,17 +8,20 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Python 3.9 isn't built for Ubuntu 26.04, which ubuntu-latest became in
+    # October 2026, so its job stays on 24.04.
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.9", "3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
