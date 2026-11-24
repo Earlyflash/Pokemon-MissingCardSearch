@@ -443,7 +443,10 @@ class MainTests(unittest.TestCase):
         self.assertLess(page.index("<h2>English</h2>"), page.index("<h2>Japanese</h2>"))
         # Totals cover both sets: 3/6 owned, 3 missing.
         self.assertIn("<b>3/6</b><span>cards owned</span>", page)
-        self.assertIn("<b>3</b><span>cards missing</span>", page)
+        # A missing tile per language, in section order.
+        self.assertIn("<b>1</b><span>English cards missing</span></div>"
+                      '<div class="stat"><b>2</b><span>Japanese cards missing</span>', page)
+        self.assertNotIn("<span>cards missing</span>", page)
         self.assertIn("Mystery (English): no TCGdex set found", page)
         # Pictures wait for the checkbox: data-src, not src.
         self.assertIn('id="pics"', page)

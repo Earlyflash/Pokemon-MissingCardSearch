@@ -1013,10 +1013,17 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
     total = sum(r["total"] for r in shown)
     missing = sum(len(r["missing"]) for r in shown)
     overall = 100.0 * owned / total if total else 0
-    stats = "".join(f'<div class="stat{cls}"><b>{v}</b><span>{label}</span></div>' for v, label, cls in (
+    # The language you own the most cards in first, as the sections are.
+    language_order = sorted(languages.items(),
+                            key=lambda kv: (-sum(r["owned_count"] for r in kv[1]), kv[0]))
+    # A "cards missing" tile per language, or one tile if there's only one.
+    missing_tiles = [(sum(len(r["missing"]) for r in sets), f"{language} cards missing", "")
+                     for language, sets in language_order] if len(languages) > 1 else [
+        (missing, "cards missing", "")]
+    stats = "".join(f'<div class="stat{cls}"><b>{v}</b><span>{e(label)}</span></div>'
+                    for v, label, cls in (
         (f"{int(overall)}%" if total else "–", "complete overall", f" overall {_tier(overall)}"),
-        (missing, "cards missing", ""), (len(shown), "sets", ""),
-        (f"{owned}/{total}", "cards owned", "")))
+        *missing_tiles, (len(shown), "sets", ""), (f"{owned}/{total}", "cards owned", "")))
     legend = "".join(f'<span class="t{len(TIERS) - 1 - i}">{label}</span>'
                      for i, (_, label) in enumerate(TIERS))
     if ordered:
@@ -1038,8 +1045,7 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
         '<option value="code">Set number</option>'
         f'</select></label><div class="legend">{legend}</div></div>',
     ]
-    for n, (language, sets) in enumerate(sorted(
-            languages.items(), key=lambda kv: (-sum(r["owned_count"] for r in kv[1]), kv[0]))):
+    for n, (language, sets) in enumerate(language_order):
         sub = [f"{sum(r['owned_count'] for r in sets)} cards owned", f"{len(sets)} set(s)",
                f"{sum(len(r['missing']) for r in sets)} missing"]
         if hidden.get(language):
