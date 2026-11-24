@@ -152,6 +152,70 @@ class ReadOwnedTests(unittest.TestCase):
         self.assertEqual(owned, {("30th Celebration", "Japanese"): {"FIR", "DAR"}})
 
 
+class SparesTests(unittest.TestCase):
+    def export(self, *rows):
+        """rows of (number, quantity, finish, grading company, purchase price)."""
+        f = tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8")
+        f.write(HEADER)
+        for number, qty, finish, graded, paid in rows:
+            f.write(f"X,MEGA Dream ex,,{number},Japanese,{finish},{graded},,{paid},{qty},,C,\n")
+        f.close()
+        self.addCleanup(os.unlink, f.name)
+        return f.name
+
+    def spares(self, *rows, official=None):
+        copies = {}
+
+        def fetch(url, verbose=False):
+            got = fake_fetch(url, verbose)
+            if official and url.endswith("/ja/sets/M2a"):
+                got = {**got, "cardCount": {"official": official, "total": 3}}
+            return got
+
+        with redirect_stdout(io.StringIO()):
+            owned = missing_cards.read_owned(self.export(*rows), copies=copies)
+            with patch("binder_cover._fetch_json", side_effect=fetch):
+                missing_cards._LISTING_CACHE.clear()
+                results, _ = missing_cards.find_missing(
+                    owned, {"japanese": {"mega dream ex": "M2a"}}, copies=copies)
+        return copies, results[0]["spares"]
+
+    def test_copies_beyond_the_first_are_spare(self):
+        copies, spares = self.spares(("001", 3, "", "", "2.50"), ("002", 1, "", "", ""),
+                                     ("003", 1, "", "", "9.00"), ("003", 2, "", "", ""))
+        self.assertEqual(copies[("MEGA Dream ex", "Japanese")][("1", None)],
+                         {"raw": 3, "graded": 0, "paid": "2.50", "finish": None})
+        # 003's two rows add up, and keep the first purchase price given.
+        self.assertEqual([(c["id"], c["spares"], c["paid"]) for c in spares],
+                         [("M2a-001", 2, "2.50"), ("M2a-003", 2, "9.00")])
+
+    def test_graded_copies_are_kept_not_spare(self):
+        _, spares = self.spares(("001", 1, "", "PSA", ""), ("001", 2, "", "", ""),
+                                ("002", 2, "", "PSA", ""), ("003", 1, "", "", ""))
+        # 001: a slab and two raw copies, so both raw ones are spare; 002's
+        # two slabs and 003's one copy aren't.
+        self.assertEqual([(c["id"], c["spares"]) for c in spares], [("M2a-001", 2)])
+
+    def test_each_finish_is_its_own_card(self):
+        _, spares = self.spares(("001", 1, "", "", ""), ("001", 2, "Energy Reverse Holofoil", "", ""),
+                                ("002", 1, "", "", ""), ("002", 1, "Love Ball Reverse Holofoil", "", ""))
+        self.assertEqual([(c["id"], c["spares"], c["finish"], c["finish_name"]) for c in spares],
+                         [("M2a-001", 1, "energy", "Energy Reverse Holofoil")])
+
+    def test_base_cards_are_marked_secret_rares_arent(self):
+        rows = (("001", 2, "", "", ""), ("002", 2, "", "", ""), ("003", 2, "", "", ""))
+        _, spares = self.spares(*rows, official=2)
+        self.assertEqual([(c["id"], c["base"]) for c in spares],
+                         [("M2a-001", True), ("M2a-002", True), ("M2a-003", False)])
+        # A set TCGdex gives no printed count for has no base cards.
+        _, spares = self.spares(*rows)
+        self.assertFalse(any(c["base"] for c in spares))
+
+    def test_numbers_the_set_doesnt_list_have_no_spares(self):
+        _, spares = self.spares(("099", 4, "", "", ""))
+        self.assertEqual(spares, [])
+
+
 class ResolveSetIdTests(unittest.TestCase):
     def setUp(self):
         missing_cards._LISTING_CACHE.clear()
@@ -413,23 +477,26 @@ class MainTests(unittest.TestCase):
                          [{"set_name": "Mystery", "language": "English",
                            "reason": "no TCGdex set found"}])
 
-    def html_page(self, *flags):
-        export = write_export([("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1),
-                               ("Ivysaur", "Mega Evolution", "002", "English", 1),
-                               ("Pikachu", "Mega Evolution", "TG01", "English", 1),
-                               ("X", "Mystery", "5", "English", 1)])
-        out = tempfile.NamedTemporaryFile(suffix=".csv", delete=False).name
-        out_html = tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
+    def html_page(self, *flags, rows=None):
+        export = write_export(rows or [("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 1),
+                                       ("Ivysaur", "Mega Evolution", "002", "English", 1),
+                                       ("Pikachu", "Mega Evolution", "TG01", "English", 1),
+                                       ("X", "Mystery", "5", "English", 1)])
         try:
-            with patch("binder_cover._fetch_json", side_effect=fake_fetch), \
-                    redirect_stdout(io.StringIO()):
-                missing_cards.main(["--csv", export, "--out", out, "--html", out_html,
-                                    "--min-complete", "50", *flags])
-            with open(out_html, encoding="utf-8") as f:
-                return f.read()
+            with tempfile.TemporaryDirectory() as d:
+                out, out_html = os.path.join(d, "missing.csv"), os.path.join(d, "missing.html")
+                with patch("binder_cover._fetch_json", side_effect=fake_fetch), \
+                        redirect_stdout(io.StringIO()):
+                    missing_cards.main(["--csv", export, "--out", out, "--html", out_html,
+                                        "--min-complete", "50", *flags])
+                with open(os.path.join(d, "spares.csv"), encoding="utf-8-sig") as f:
+                    self.spares = list(csv.DictReader(f))
+                with open(os.path.join(d, "spares.html"), encoding="utf-8") as f:
+                    self.spares_page = f.read()
+                with open(out_html, encoding="utf-8") as f:
+                    return f.read()
         finally:
-            for p in (export, out, out_html):
-                os.unlink(p)
+            os.unlink(export)
 
     def test_html_overview(self):
         page = self.html_page()
@@ -485,6 +552,39 @@ class MainTests(unittest.TestCase):
         self.assertIn('<li class="card" data-id="M2a-003">', page)
         self.assertIn('<script id="card-prices" type="application/json">', page)
         self.assertIn('id="prices" checked', page)
+
+    def test_html_and_csv_list_spares(self):
+        page = self.html_page(rows=[("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 3),
+                                    ("Ivysaur", "Mega Evolution", "002", "English", 2),
+                                    ("Pikachu", "Mega Evolution", "TG01", "English", 1)])
+        # Spares from every set, M2a's too though it's under --min-complete.
+        self.assertEqual([(r["TCGdex Card ID"], r["English Name"], r["Spares"], r["Purchase Price"])
+                          for r in self.spares],
+                         [("me01-002", "Ivysaur", "1", "1.00"), ("M2a-001", "", "2", "1.00")])
+        self.assertIn('<a class="stat spares-stat" href="#spares"><b>3</b>', page)
+        self.assertIn('<section class="spares" id="spares" data-min="1"><h2>Spares</h2>'
+                      '<p class="lang-sub">3 spare copies of 2 card(s) in 2 set(s)</p>', page)
+        self.assertIn("only counted when they're worth more than £1 each", page)
+        # Most spares first; each card carries its id and count for the script.
+        self.assertLess(page.index("<b>2</b><small>spare</small></span><span class=\"tname\">MEGA"),
+                        page.index("<b>1</b><small>spare</small></span><span class=\"tname\">Mega Ev"))
+        self.assertIn('<li class="card spare" data-id="M2a-001" data-count="2">', page)
+        self.assertEqual([r["Base Set"] for r in self.spares], ["", ""])
+        self.assertIn('title="RareCandy purchase price 1.00">×2</span>', page)
+        self.assertIn('<a href="spares.html">Every spare, with prices, for trading', page)
+        # The spares page lists both, linking back to the overview.
+        self.assertIn('<a href="missing.html">Missing cards</a>', self.spares_page)
+        self.assertEqual(self.spares_page.count("<tr class="), 2)
+        self.assertEqual(self.spares[1]["Picture"],
+                         "https://images.scrydex.com/pokemon/m2a_ja-1/medium")
+        # No spares, no section.
+        self.assertNotIn('id="spares"', self.html_page())
+        self.assertEqual(self.spares, [])
+
+    def test_spares_min_price_flag(self):
+        page = self.html_page("--spares-min-price", "2.5",
+                              rows=[("Bulbasaur", "MEGA Dream ex", "001", "Japanese", 2)])
+        self.assertIn('data-min="2.5"', page)
 
     def test_card_images(self):
         ja = {"tcgdex_lang": "ja", "set_id": "M2a"}

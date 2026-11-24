@@ -183,6 +183,15 @@ class PulseAPITests(unittest.TestCase):
         self.assertEqual([q.get("page") for q in ctx.queries if q.get("set_id") == "sv3pt5"],
                          [None, "2", "3"])
 
+    def test_a_set_is_read_once_a_run(self):
+        # The spares are priced after the missing cards, from the same read.
+        ctx = FakeContext(SV151, page_size=2)
+        self.plugin.search_set([card("sv03.5-003")], ctx)
+        before = len(ctx.queries)
+        offers = self.plugin.search_set([card("sv03.5-002"), card("sv03.5-199")], ctx)
+        self.assertEqual([o.card_id for o in offers], ["sv03.5-002", "sv03.5-199"])
+        self.assertEqual(len(ctx.queries), before)
+
     def test_unknown_set_gives_no_prices(self):
         ctx = FakeContext(SV151)
         self.assertEqual(self.plugin.search_set([card("zz1-001", "Nobody")], ctx), [])

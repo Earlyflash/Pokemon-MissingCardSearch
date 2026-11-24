@@ -65,7 +65,8 @@ import binder_cover  # noqa: E402  (path set up just above)
 from binder_cover import TCGDEX_BASE, TCGDEX_LANGS  # noqa: E402
 from marketplaces.base import FINISH_NORMAL, FINISHES, finish_key  # noqa: E402
 from marketplaces.cardmarket import card_variants, product_id  # noqa: E402
-from card_prices import prices_block, prices_for  # noqa: E402
+from card_prices import SPARE_PRICES_NAME, prices_block, prices_for, read_spare_prices  # noqa: E402
+from spares_page import write_spares_html  # noqa: E402
 from ordered import card_key, default_arrived_path, prune_arrived, read_ordered_shops  # noqa: E402
 
 # RareCandyExporter writes a full language name per card (detected from the
@@ -86,6 +87,10 @@ LANGUAGE_TO_TCGDEX = {
 OUT_COLUMNS = ["Set Name", "TCGdex Set", "Language", "Card Number", "Card Name", "TCGdex Card ID",
                "English Name"]
 PRINTS_NAME = "missing_prints.csv"
+SPARES_NAME = "spares.csv"
+SPARES_COLUMNS = [*OUT_COLUMNS, "Finish", "Spares", "Purchase Price", "Base Set", "Picture",
+                  "Large Picture"]
+SPARES_HTML_NAME = "spares.html"
 HTML_NAME = "missing_cards.html"
 
 # TCGdex has pictures for English cards but none for Japanese ones, which
@@ -175,7 +180,7 @@ def basic_energy_number(product_name):
     return BASIC_ENERGY_NUMBERS.get(m.group(1), "") if m else ""
 
 
-def read_owned(csv_path, finishes=None):
+def read_owned(csv_path, finishes=None, copies=None):
     """Read a RareCandyExporter CSV. Returns {(set_name, language): set of
     normalized card numbers owned}. Rows with no set name or card number
     (untracked cards) can't be matched to a set list, so they're skipped,
@@ -184,7 +189,12 @@ def read_owned(csv_path, finishes=None):
     Pass a dict as `finishes` to also get {(set_name, language): {number:
     set of finish keys}} in it, for sets where the export gives any row a
     Material/Finish (MEGA Dream ex, exported with --m2a-variants). A row
-    there with no finish adds None to its number's set."""
+    there with no finish adds None to its number's set.
+
+    Pass a dict as `copies` to also get {(set_name, language): {(number,
+    finish key or None): {"raw": copies ungraded, "graded": copies graded,
+    "paid": the first purchase price given, "finish": the export's
+    wording}}}, for working out spares (see find_missing)."""
     owned, seen = {}, {}
     skipped = 0
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
@@ -196,11 +206,19 @@ def read_owned(csv_path, finishes=None):
                 skipped += 1
                 continue
             try:
-                if int(row.get("Quantity") or 1) <= 0:
-                    continue
+                quantity = int(float(row.get("Quantity") or 1))
             except ValueError:
-                pass
+                quantity = 1
+            if quantity <= 0:
+                continue
             language = (row.get("Language") or "").strip() or "English"
+            if copies is not None:
+                finish = (row.get("Material/Finish") or "").strip()
+                got = copies.setdefault((set_name, language), {}).setdefault(
+                    (number, finish_key(finish)),
+                    {"raw": 0, "graded": 0, "paid": None, "finish": finish or None})
+                got["graded" if (row.get("Grading Company") or "").strip() else "raw"] += quantity
+                got["paid"] = got["paid"] or (row.get("Purchase Price") or "").strip() or None
             owned.setdefault((set_name, language), set()).add(number)
             seen.setdefault((set_name, language), {}).setdefault(number, set()).add(
                 finish_key(row.get("Material/Finish")))
@@ -323,8 +341,9 @@ def _read_names_cache(path):
         return {}
 
 
-def add_english_names(results, cache_path=None):
-    """Set c["name_en"] on every missing card. English-dataset cards already
+def add_english_names(results, cache_path=None, spares_only=()):
+    """Set c["name_en"] on every missing card and spare in `results`, and on
+    just the spares of those in `spares_only`. English-dataset cards already
     have it; for the rest it's looked up via each card's Cardmarket product
     (one TCGdex request per card, run concurrently, plus Cardmarket's product
     list once). Cards it can't resolve are left with name_en None.
@@ -335,21 +354,23 @@ def add_english_names(results, cache_path=None):
     network hiccup, or a set too new for TCGdex to link to Cardmarket)."""
     cache = _read_names_cache(cache_path) if cache_path else {}
     todo, prints = [], {}
-    for r in results:
-        for c in [*r["missing"], *r.get("prints", ())]:
-            if r["tcgdex_lang"] == "en":
-                c["name_en"] = c.get("name")
-            else:
-                c["name_en"] = None
-                # A card missing in several finishes is looked up once.
-                key = (r["tcgdex_lang"], c.get("id"))
-                cached = cache.get("/".join(key))
-                if cached:
-                    c["name_en"] = cached
-                    continue
-                if key not in prints:
-                    todo.append((r["tcgdex_lang"], c))
-                prints.setdefault(key, []).append(c)
+    cards = [(r, c) for r in results
+             for c in [*r["missing"], *r.get("prints", ()), *r.get("spares", ())]]
+    cards += [(r, c) for r in spares_only for c in r.get("spares", ())]
+    for r, c in cards:
+        if r["tcgdex_lang"] == "en":
+            c["name_en"] = c.get("name")
+        else:
+            c["name_en"] = None
+            # A card missing in several finishes is looked up once.
+            key = (r["tcgdex_lang"], c.get("id"))
+            cached = cache.get("/".join(key))
+            if cached:
+                c["name_en"] = cached
+                continue
+            if key not in prints:
+                todo.append((r["tcgdex_lang"], c))
+            prints.setdefault(key, []).append(c)
     if not todo:
         return
 
@@ -426,7 +447,7 @@ def missing_prints(listed, finishes, prints):
     return missing, unknown
 
 
-def find_missing(owned, set_map, finishes=None):
+def find_missing(owned, set_map, finishes=None, copies=None):
     """Returns (results, unmatched). results is one dict per (set, language)
     group: set_name, language, set_id, tcgdex_lang, total, owned_count,
     missing (list of TCGdex card dicts: cards with no copy owned), prints
@@ -439,8 +460,16 @@ def find_missing(owned, set_map, finishes=None):
     For groups in `finishes` (see read_owned), prints counts every print of
     a card with reverse holos separately: each one not owned, its "finish"
     set. That's for the wants list only: missing, completion and the store
-    search still go by card, any print."""
-    finishes = finishes or {}
+    search still go by card, any print.
+
+    With `copies` (see read_owned), each result also has "spares": the
+    TCGdex card dicts of cards owned more than once, with "spares" (copies
+    beyond the one kept; a graded copy can be the one kept, but is never a
+    spare), "paid" (the export's purchase price, as text), "base" (True
+    for a card numbered within the set's printed count, i.e. not a secret
+    rare) and, where the export says which finish the copies are, "finish"
+    and "finish_name" added."""
+    finishes, copies = finishes or {}, copies or {}
     results, unmatched = [], []
     for (set_name, language) in sorted(owned, key=lambda k: (k[0].lower(), k[1])):
         numbers = owned[(set_name, language)]
@@ -484,6 +513,17 @@ def find_missing(owned, set_map, finishes=None):
                 print(f"[set] {len(no_finish)} card(s) owned with no finish in the export, "
                       f"counted as normal: {', '.join(sorted(no_finish, key=_sort_key))}")
         unknown = sorted((n for n in numbers if n not in listed), key=_sort_key)
+        spares, official = [], (detail.get("cardCount") or {}).get("official")
+        for (number, finish), got in copies.get((set_name, language), {}).items():
+            n = min(got["raw"], got["raw"] + got["graded"] - 1)
+            if n > 0 and number in listed:
+                spares.append({**listed[number], "spares": n, "paid": got["paid"],
+                               "finish": finish if got["finish"] else None,
+                               "finish_name": got["finish"],
+                               "base": bool(official and number.isdigit()
+                                            and int(number) <= official)})
+        spares.sort(key=lambda c: (_sort_key(normalize_number(c.get("localId"))),
+                                   c.get("finish") or ""))
         results.append({
             "set_name": set_name, "language": language, "set_id": set_id,
             "tcgdex_lang": lang_used, "total": len(listed),
@@ -491,6 +531,7 @@ def find_missing(owned, set_map, finishes=None):
             "missing": missing, "prints": by_print, "unknown_owned": unknown,
             "card_keys": keys, "series": series_name(detail, lang_used),
             "released": detail.get("releaseDate") or "",
+            "spares": spares,
         })
     return results, unmatched
 
@@ -584,6 +625,30 @@ def write_prints_csv(results, path):
                 w.writerow([r["set_name"], r["set_id"], r["language"],
                             c.get("localId", ""), c.get("name", ""), c.get("id", ""),
                             c.get("name_en") or "", c.get("finish_name") or ""])
+
+
+def write_spares_csv(results, path):
+    """The cards owned more than once (see find_missing), for trading or
+    selling: missing_cards.csv's columns, so price_search.py can read it the
+    same way, plus the finish (when the export gives it), how many copies
+    are spare, the export's purchase price and whether the card is in the
+    set's base (numbered within its printed count) rather than a secret
+    rare, and its pictures (see card_images). Every spare is listed: the
+    overview leaves out base cards that aren't worth anything (see
+    write_html). Returns the copies written."""
+    copies = 0
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(SPARES_COLUMNS)
+        for r in results:
+            for c in r.get("spares", ()):
+                w.writerow([r["set_name"], r["set_id"], r["language"],
+                            c.get("localId", ""), c.get("name", ""), c.get("id", ""),
+                            c.get("name_en") or "", c.get("finish_name") or "",
+                            c["spares"], c.get("paid") or "", "yes" if c.get("base") else "",
+                            *(url or "" for url in card_images(r, c))])
+                copies += c["spares"]
+    return copies
 
 
 def write_json(results, unmatched, path, below=(), min_complete=0):
@@ -786,6 +851,25 @@ section.has-open .hint { display: none; }
 .pics .px b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
 .pics .px .none b { color: var(--muted); font-weight: 400; }
 body.noprices .px, body.noprices #prices-asof { display: none; }
+a.stat { color: inherit; text-decoration: none; transition: box-shadow .15s ease; }
+a.stat:hover { box-shadow: var(--lift); }
+.spare-tile, .panel.spare { --tier: var(--gem); }
+.lang-sub a { color: var(--gem); font-weight: 600; text-decoration: none; }
+.lang-sub a:hover { text-decoration: underline; }
+.count { grid-row: span 3; width: 76px; height: 76px; border-radius: 50%; display: flex;
+         flex-direction: column; align-items: center; justify-content: center;
+         background: color-mix(in srgb, var(--gem) 13%, transparent); }
+.count b { font-size: 22px; line-height: 1.1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.count small { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.chip:empty { display: none; }
+.qty { flex: none; align-self: center; font-size: 12px; font-weight: 700; padding: 1px 8px;
+       border-radius: 999px; cursor: help; color: var(--gem);
+       background: color-mix(in srgb, var(--gem) 14%, transparent); }
+.pics .card .qty { position: absolute; top: 8px; left: 8px; font-size: 13px; padding: 2px 9px;
+                   color: var(--bg); background: var(--gem);
+                   box-shadow: 0 0 0 2px #fff, 0 2px 8px rgba(0, 0, 0, .45); }
+.pics .spare .px { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body.noprices .worth { display: none; }
 details.unmatched { margin-top: 44px; color: var(--muted); }
 details.unmatched summary { cursor: pointer; font-weight: 600; }
 details.unmatched ul { padding-left: 20px; font-size: 14px; }
@@ -793,7 +877,7 @@ details.unmatched ul { padding-left: 20px; font-size: 14px; }
   h1 { font-size: 26px; }
   .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .tile { grid-template-columns: 1fr; padding: 12px; }
-  .ring { grid-row: auto; width: 64px; height: 64px; }
+  .ring, .count { grid-row: auto; width: 64px; height: 64px; }
   .legend { margin-left: 0; }
   .pics .cards { grid-template-columns: repeat(2, 1fr); }
 }
@@ -804,15 +888,19 @@ HTML_SCRIPT = """
 (function () {
   const data = JSON.parse(document.getElementById('card-prices').textContent);
   const cur = {GBP: '£', EUR: '€', USD: '$'}[data.currency] || data.currency + ' ';
+  const money = v => cur + v.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
   const labels = [['pulse', 'Pulse', 'PulseAPI UK market price'],
                   ['cm', 'CM', 'Cardmarket'], ['low', 'Low', 'Cheapest listing online']];
   let any = false;
   document.querySelectorAll('li.card[data-id]').forEach(li => {
     const p = data.cards[li.dataset.id];
     if (!p) return;
+    // Spares only show Pulse's market price, and that times the copies spare.
+    const spare = li.classList.contains('spare');
+    if (spare && !p.pulse) return;
     const row = document.createElement('span');
     row.className = 'px';
-    for (const [key, label, what] of labels) {
+    for (const [key, label, what] of spare ? labels.slice(0, 1) : labels) {
       // Every price gets a slot, so they line up under the pictures.
       const [price, url, hover] = p[key] || [];
       const a = document.createElement(price ? 'a' : 'span');
@@ -828,9 +916,64 @@ HTML_SCRIPT = """
       a.append(i, b);
       row.append(a);
     }
+    if (spare) {
+      const n = +li.dataset.count, value = parseFloat(p.pulse[0]) * n;
+      li.dataset.value = value;
+      const s = document.createElement('span'), i = document.createElement('i'),
+            b = document.createElement('b');
+      s.title = n + ' spare cop' + (n === 1 ? 'y' : 'ies') + ' at the Pulse price';
+      i.textContent = '×' + n; b.textContent = money(value);
+      s.append(i, b);
+      row.append(s);
+    }
     li.append(row);
     any = true;
   });
+  // Spares: a set's base cards (numbered within its printed count) only
+  // count when they're worth more than the page's minimum each, since bulk
+  // commons can't be sold for anything; secret rares always count. What's
+  // left is sorted most valuable first and added up on the tiles.
+  const spares = document.getElementById('spares');
+  if (spares) {
+    const min = parseFloat(spares.dataset.min) || 0;
+    const tiles = spares.querySelector('.grid');
+    const value = li => parseFloat(li.dataset.value);
+    let total = 0, copies = 0, cards = 0, sets = 0;
+    spares.querySelectorAll('.panel.spare').forEach(panel => {
+      const list = panel.querySelector('.cards');
+      const tile = spares.querySelector(`[data-panel="${panel.id}"]`);
+      [...list.children].forEach(li => {
+        if (li.classList.contains('base') && !(value(li) / li.dataset.count > min)) li.remove();
+      });
+      const items = [...list.children];
+      if (!items.length) { tile.remove(); panel.remove(); return; }
+      let worth = 0, priced = 0, n = 0;
+      items.forEach(li => {
+        n += +li.dataset.count;
+        if (!isNaN(value(li))) { worth += value(li); priced++; }
+      });
+      items.sort((a, b) => (isNaN(value(b)) ? -1 : value(b)) - (isNaN(value(a)) ? -1 : value(a)))
+        .forEach(li => list.append(li));
+      total += worth; copies += n; cards += items.length; sets++;
+      tile.dataset.worth = worth;
+      tile.querySelector('.count b').textContent = n;
+      tile.querySelector('.ncards').textContent = items.length + ' card(s)';
+      tile.querySelector('.worth').textContent = priced ? 'worth ' + money(worth) : 'no Pulse price';
+      panel.querySelector('.summary').textContent = n + ' spare copies of ' + items.length + ' card(s)'
+        + (!priced ? ' · no Pulse prices' : ' · worth ' + money(worth) + ' at Pulse prices'
+           + (priced < items.length ? ' (' + (items.length - priced) + ' unpriced)' : ''));
+    });
+    [...tiles.children].sort((a, b) => b.dataset.worth - a.dataset.worth)
+      .forEach(t => tiles.append(t));
+    const stat = document.querySelector('.spares-stat');
+    if (!sets) { spares.remove(); stat.remove(); }
+    else {
+      spares.querySelector('.lang-sub').textContent = copies + ' spare copies of ' + cards
+        + ' card(s) in ' + sets + ' set(s) · worth ' + money(total) + ' at Pulse prices';
+      stat.querySelector('b').textContent = copies;
+      stat.querySelector('span').textContent = 'spares · ' + money(total);
+    }
+  }
   const asof = document.getElementById('prices-asof');
   if (any && data.asof) asof.textContent = ' · prices from ' + data.asof;
   const sw = document.getElementById('prices');
@@ -986,8 +1129,70 @@ def _set_group(sets, prefix, ordered=None):
     return f'<div class="sets grid">{tiles}</div>{panels}'
 
 
+def _spare_card(r, c):
+    """A spare card in a set's spares panel: like a missing card, plus how
+    many copies are spare (data-count, which the page's script multiplies
+    by the Pulse price)."""
+    e = html.escape
+    name, name_en = c.get("name") or "", c.get("name_en")
+    small, large = card_images(r, c)
+    pic = (f'<a class="pic" href="{e(large)}" target="_blank" rel="noopener">'
+           f'<img data-src="{e(small)}" alt="" loading="lazy" '
+           f'onerror="this.className=\'broken\'"></a>' if small else '<a class="pic"></a>')
+    en = f'<span class="en">{e(name_en)}</span>' if name_en and name_en != name else ""
+    finish = f'<span class="en">{e(c["finish_name"])}</span>' if c.get("finish_name") else ""
+    # The export doesn't say which currency its purchase prices are in.
+    paid = (f"RareCandy purchase price {c['paid']}" if c.get("paid")
+            else "No purchase price on RareCandy")
+    # Only a plain print's Pulse price is looked up (see price_search.py).
+    priced = "" if c.get("finish") not in (None, FINISH_NORMAL) else f' data-id="{e(c.get("id") or "")}"'
+    cls = "card spare base" if c.get("base") else "card spare"
+    return (f'<li class="{cls}"{priced} data-count="{c["spares"]}">{pic}'
+            f'<span class="num">#{e(c.get("localId") or "?")}</span>'
+            f'<span class="cname">{e(name)}</span>{en}{finish}'
+            f'<span class="qty" title="{e(paid)}">×{c["spares"]}</span></li>')
+
+
+def _spares_section(sets, min_price):
+    """The Spares section: a tile per set with cards owned more than once,
+    most spares first, each opening that set's spares. The page's script
+    leaves out base cards (see find_missing) not worth more than `min_price`
+    each at Pulse prices, or with no Pulse price, recounts what's left,
+    adds up what it's worth and sorts it most valuable first. The counts
+    written here are every spare's, for before it does."""
+    e = html.escape
+    sets = sorted(sets, key=lambda r: (-sum(c["spares"] for c in r["spares"]),
+                                       r["set_name"].lower()))
+    tiles, panels = [], []
+    for i, r in enumerate(sets):
+        pid, copies = f"spares-{i}", sum(c["spares"] for c in r["spares"])
+        tiles.append(
+            f'<button type="button" class="tile spare-tile" data-panel="{pid}" aria-expanded="false" '
+            f'aria-controls="{pid}"><span class="count"><b>{copies}</b><small>spare</small></span>'
+            f'<span class="tname">{e(r["set_name"])}</span>'
+            f'<span class="meta">{e(r["set_id"])} · {e(r["language"])} · '
+            f'<span class="ncards">{len(r["spares"])} card(s)</span></span>'
+            f'<span class="chip worth"></span></button>')
+        panels.append(
+            f'<div class="panel spare" id="{pid}" hidden><div class="phead"><div>'
+            f'<h4>{e(r["set_name"])} spares</h4><p>{e(r["set_id"])} · {e(r["language"])} · '
+            f'<span class="summary">{copies} spare copies of {len(r["spares"])} card(s)</span></p></div>'
+            f'<button type="button" class="close" aria-label="Close">×</button></div>'
+            f'<ul class="cards">{"".join(_spare_card(r, c) for c in r["spares"])}</ul></div>')
+    copies = sum(c["spares"] for r in sets for c in r["spares"])
+    cards = sum(len(r["spares"]) for r in sets)
+    return (f'<section class="spares" id="spares" data-min="{min_price:g}"><h2>Spares</h2>'
+            f'<p class="lang-sub">{copies} spare copies of {cards} card(s) in {len(sets)} set(s)</p>'
+            f'<p class="lang-sub"><a href="{SPARES_HTML_NAME}">Every spare, with prices, for '
+            f'trading →</a></p>'
+            f'<div class="grid">{"".join(tiles)}</div>{"".join(panels)}'
+            f'<p class="hint">Pick a set to see its spares, most valuable first. Cards in a '
+            f"set's base (not its secret rares) are only counted when they're worth more than "
+            f"£{min_price:g} each.</p></section>")
+
+
 def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10, ordered=None,
-               prices=None):
+               prices=None, spares_min_price=1):
     """A page to look over: a section per language, the one you own the most
     cards in first, split by series, newest first, with a tile per set
     coloured by how complete it is and saying how many cards it's missing,
@@ -998,7 +1203,10 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
     card pictures" is unticked, and only the open set's are loaded. Missing
     cards on order (`ordered`, from read_ordered_shops) are marked with a gem.
     Each missing card shows the prices in `prices` (see card_prices), which
-    price_search.py refreshes after each search."""
+    price_search.py refreshes after each search. Cards owned more than once
+    (every set's "spares", whatever its completion) get a Spares section at
+    the end, worth whatever their Pulse prices add up to; base cards worth
+    `spares_min_price` or less each aren't counted (see _spares_section)."""
     e = html.escape
     shown = [r for r in [*results, *below] if completion(r) >= hide_below]
     hidden = {}
@@ -1024,6 +1232,11 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
                     for v, label, cls in (
         (f"{int(overall)}%" if total else "–", "complete overall", f" overall {_tier(overall)}"),
         *missing_tiles, (len(shown), "sets", ""), (f"{owned}/{total}", "cards owned", "")))
+    spare_sets = [r for r in [*results, *below] if r.get("spares")]
+    if spare_sets:
+        copies = sum(c["spares"] for r in spare_sets for c in r["spares"])
+        stats += (f'<a class="stat spares-stat" href="#spares"><b>{copies}</b>'
+                  f'<span>spares</span></a>')
     legend = "".join(f'<span class="t{len(TIERS) - 1 - i}">{label}</span>'
                      for i, (_, label) in enumerate(TIERS))
     if ordered:
@@ -1062,6 +1275,8 @@ def write_html(results, unmatched, path, below=(), min_complete=0, hide_below=10
             parts.append(f'<h3>{e(name)} <span>{len(group)} set(s)</span></h3>'
                          + _set_group(group, f"s{n}-{m}", ordered))
         parts.append('<p class="hint">Pick a set to see the cards it\'s missing.</p></section>')
+    if spare_sets:
+        parts.append(_spares_section(spare_sets, spares_min_price))
     if unmatched:
         items = "".join(f"<li>{e(n)} ({e(lang)}): {e(why)}</li>" for n, lang, why in unmatched)
         parts.append(f'<details class="unmatched"><summary>Couldn\'t check {len(unmatched)} '
@@ -1111,6 +1326,14 @@ def build_arg_parser():
     p.add_argument("--html-min-complete", type=float, default=10, metavar="PERCENT",
                    help="Leave sets under this percentage complete off the --html page "
                         "(default: %(default)g).")
+    p.add_argument("--spares-out", metavar="FILE",
+                   help="CSV of the cards you own more than once, with how many copies are "
+                        "spare, for price_search.py to price (default: spares.csv next to "
+                        "--out).")
+    p.add_argument("--spares-min-price", type=float, default=1, metavar="AMOUNT",
+                   help="On the --html page, only count spares in a set's base (not its "
+                        "secret rares) whose Pulse price is more than this (default: "
+                        "%(default)g).")
     p.add_argument("--no-english-names", dest="english_names", action="store_false",
                    help="Skip looking up English names for non-English cards (saves "
                         "Cardmarket's ~14 MB product list and one TCGdex request per card).")
@@ -1143,8 +1366,8 @@ def main(argv=None):
         run_exporter(args.profile, args.export_csv, headful=args.headful)
         csv_path = args.export_csv
 
-    finishes = {}
-    owned = read_owned(csv_path, finishes)
+    finishes, copies = {}, {}
+    owned = read_owned(csv_path, finishes, copies)
     if args.sets:
         wanted = {s.lower() for s in args.sets}
         owned = {k: v for k, v in owned.items() if k[0].lower() in wanted}
@@ -1158,12 +1381,13 @@ def main(argv=None):
             sys.exit(f'Invalid --map "{m}": expected "Set Name=CODE".')
         set_map.setdefault("cli", {})[name.strip().lower()] = code.strip()
 
-    results, unmatched = find_missing(owned, set_map, finishes)
+    results, unmatched = find_missing(owned, set_map, finishes, copies)
     if args.prune_ordered:
         prune_ordered(results, args.ordered, args.arrived)
     results, below = apply_threshold(results, args.min_complete)
     if args.english_names:
-        add_english_names(results, DEFAULT_NAMES_CACHE)
+        add_english_names(results, DEFAULT_NAMES_CACHE,
+                          spares_only=[r for r in below if r.get("spares")])
     print_report(results, unmatched, below, args.min_complete)
     ensure_parent(args.out)
     write_csv(results, args.out)
@@ -1174,11 +1398,22 @@ def main(argv=None):
     write_prints_csv(results, prints_out)
     print(f"Wrote {sum(len(r.get('prints', r['missing'])) for r in results)} row(s) to "
           f"{os.path.abspath(prints_out)} for the wants list")
+    spares_out = args.spares_out or os.path.join(os.path.dirname(os.path.abspath(args.out)),
+                                                 SPARES_NAME)
+    ensure_parent(spares_out)
+    spares = write_spares_csv([*results, *below], spares_out)
+    print(f"Wrote {spares} spare copies to {os.path.abspath(spares_out)}")
+    spares_html = os.path.join(os.path.dirname(spares_out), SPARES_HTML_NAME)
+    with open(spares_out, encoding="utf-8-sig", newline="") as f:
+        write_spares_html(list(csv.DictReader(f)), read_spare_prices(
+            os.path.join(os.path.dirname(os.path.abspath(args.out)), SPARE_PRICES_NAME)),
+            spares_html, args.spares_min_price, os.path.basename(args.html or HTML_NAME))
+    print(f"Wrote the spares page to {spares_html}")
     html_out = args.html or os.path.join(os.path.dirname(os.path.abspath(args.out)), HTML_NAME)
     ensure_parent(html_out)
     write_html(results, unmatched, html_out, below, args.min_complete, args.html_min_complete,
                read_ordered_shops(args.ordered),
-               prices_for(os.path.dirname(os.path.abspath(args.out))))
+               prices_for(os.path.dirname(os.path.abspath(args.out))), args.spares_min_price)
     print(f"Wrote the set overview to {os.path.abspath(html_out)}")
     if args.json:
         ensure_parent(args.json)

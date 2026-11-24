@@ -277,7 +277,15 @@ class PulseAPI(Marketplace):
         return best, None
 
     def set_cards(self, set_id, language, first_page, ctx):
-        """Every plain copy PulseAPI has in the set, by normalised card number."""
+        """Every plain copy PulseAPI has in the set, by normalised card number.
+        A set is read once a run, so pricing the spares after the missing
+        cards (see price_search.py) costs no more requests."""
+        read = ctx.state.setdefault("set_cards", {})
+        if (set_id, language) not in read:
+            read[(set_id, language)] = self._read_set(set_id, language, first_page, ctx)
+        return read[(set_id, language)]
+
+    def _read_set(self, set_id, language, first_page, ctx):
         if first_page is None:
             first_page = self._search(ctx, language, set_id=set_id)
         data, meta = first_page

@@ -367,6 +367,50 @@ class MainTests(unittest.TestCase):
         self.assertNotIn("found for sale", out)
         self.assertIn("Wrote 2 price guide price(s)", out)
 
+    def test_spares_are_priced_by_pulseapi_with_its_search_context(self):
+        seen = []
+
+        class Pulse(PriceGuide):
+            id, name = "pulseapi", "PulseAPI"
+
+            def search_set(self, cards, ctx):
+                seen.append((ctx, [c.card_id for c in cards]))
+                return [Offer(marketplace="", card_id=c.card_id, url="p", price=Decimal("2.5"),
+                              currency="GBP", title="UK market price") for c in cards]
+
+        with tempfile.TemporaryDirectory() as d:
+            spares, spare_prices = os.path.join(d, "spares.csv"), os.path.join(d, "sp.csv")
+            with open(spares, "w", encoding="utf-8-sig", newline="") as f:
+                f.write("Set Name,TCGdex Set,Language,Card Number,Card Name,TCGdex Card ID,"
+                        "English Name,Finish,Spares,Purchase Price\n"
+                        "MEGA Dream ex,M2a,Japanese,001,フシギダネ,M2a-001,Bulbasaur,,2,1.00\n"
+                        "MEGA Dream ex,M2a,Japanese,001,フシギダネ,M2a-001,Bulbasaur,"
+                        "Energy Reverse Holofoil,1,\n")
+            _, out = self.run_main("--spares", spares, "--spare-prices-out", spare_prices,
+                                   plugins={"pulseapi": Pulse()})
+            with open(spare_prices, encoding="utf-8-sig") as f:
+                rows = list(csv.DictReader(f))
+            # The spares page next to spares.csv is rebuilt with the prices.
+            with open(os.path.join(d, "spares.html"), encoding="utf-8") as f:
+                self.assertIn('<td class="num value">£5.00</td>', f.read())
+        # The missing cards' search, then the spares with the same context;
+        # the reverse holo isn't priced, as PulseAPI's price is the plain print's.
+        self.assertEqual([ids for _, ids in seen], [["M2a-002", "M2a-003"], ["me01-001"], ["M2a-001"]])
+        self.assertIs(seen[0][0], seen[2][0])
+        self.assertEqual([(r["TCGdex Card ID"], r["Marketplace"], r["Price (GBP)"]) for r in rows],
+                         [("M2a-001", "pulseapi", "2.50")])
+        self.assertIn("Pricing 1 spare card(s) with PulseAPI", out)
+
+    def test_no_spares_priced_without_pulseapi(self):
+        with tempfile.TemporaryDirectory() as d:
+            spares, spare_prices = os.path.join(d, "spares.csv"), os.path.join(d, "sp.csv")
+            with open(spares, "w", encoding="utf-8") as f:
+                f.write("Set Name,TCGdex Set,Language,Card Number,Card Name,TCGdex Card ID\n"
+                        "MEGA Dream ex,M2a,Japanese,001,x,M2a-001\n")
+            _, out = self.run_main("--spares", spares, "--spare-prices-out", spare_prices)
+            self.assertFalse(os.path.exists(spare_prices))
+        self.assertNotIn("spare", out)
+
     def test_one_marketplace_only(self):
         rows, out = self.run_main("--marketplace", "euroshop")
         self.assertEqual({r["Marketplace"] for r in rows}, {"euroshop"})

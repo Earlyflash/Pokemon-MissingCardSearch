@@ -11,6 +11,10 @@ price_search.py's last run, for pricing a card quickly at a card show:
   (price_guide.csv).
 - **Low**: the cheapest ungraded listing any shop had (offers.csv).
 
+Spare cards (the overview's Spares section) only get the Pulse price, from
+spare_prices.csv, which price_search.py writes in the same format as
+price_guide.csv.
+
 The prices go in the page as one JSON block (see prices_block) that the
 page's script spreads over the cards. missing_cards.py fills it from
 whatever CSVs are there when it writes the page, and price_search.py
@@ -26,6 +30,7 @@ from decimal import Decimal, InvalidOperation
 
 OFFERS_NAME = "offers.csv"
 GUIDE_NAME = "price_guide.csv"
+SPARE_PRICES_NAME = "spare_prices.csv"
 BLOCK_ID = "card-prices"
 _BLOCK = re.compile(r'<script id="' + BLOCK_ID + r'" type="application/json">.*?</script>', re.S)
 _TREND = re.compile(r"\btrend ([A-Z]{3}) ([\d.]+)")
@@ -65,12 +70,13 @@ def _shop_names():
         return {}
 
 
-def read_card_prices(offers_path, guide_path, names=None):
+def read_card_prices(offers_path, guide_path, names=None, spares_path=None):
     """{"asof": "15 Nov, 07:31" or None, "currency": "GBP",
         "cards": {card id: {"pulse": [price, url, hover], "cm": [price, url, hover],
                             "low": [price, url, hover]}}}
     from price_search.py's CSVs; a card only has the prices that were found.
-    Prices are strings with two decimals."""
+    Spares (`spares_path`) only have "pulse". Prices are strings with two
+    decimals."""
     names = _shop_names() if names is None else names
     cards, currency = {}, None
 
@@ -98,6 +104,11 @@ def read_card_prices(offers_path, guide_path, names=None):
                 hover = f"No trend price · {hover}"
             put(r["TCGdex Card ID"], "cm", price, [r["URL"], hover])
 
+    spares = read_spare_prices(spares_path) if spares_path else None
+    for card_id, (price, url, hover) in (spares or {}).get("cards", {}).items():
+        currency = currency or spares["currency"]
+        put(card_id, "pulse", Decimal(price), [url, hover])
+
     offers, ocol = _rows(offers_path)
     counts = {}
     for r in offers:
@@ -114,15 +125,36 @@ def read_card_prices(offers_path, guide_path, names=None):
             cards[card_id]["low"][2] += f" · cheapest of {n} listings"
 
     times = [t for t in (_mtime(guide_path) if guide else None,
-                         _mtime(offers_path) if offers else None) if t]
+                         _mtime(offers_path) if offers else None,
+                         _mtime(spares_path) if spares and spares["cards"] else None) if t]
     return {"asof": f"{max(times):%d %b, %H:%M}" if times else None,
             "currency": currency or "GBP", "cards": cards}
+
+
+def read_spare_prices(path):
+    """{"asof": "15 Nov, 07:31" or None, "currency": "GBP",
+        "cards": {card id: [price, url, hover]}}: each spare's PulseAPI price
+    from price_search.py's spare_prices.csv, the lowest where a card has
+    several (one per finish), or no cards if there's no file yet."""
+    rows, col = _rows(path)
+    cards = {}
+    for r in rows:
+        price = _money(r[col])
+        if price is None or r["Marketplace"] != "pulseapi":
+            continue
+        old = cards.get(r["TCGdex Card ID"])
+        if old is None or price < Decimal(old[0]):
+            cards[r["TCGdex Card ID"]] = [f"{price:.2f}", r["URL"], r["Listing Title"] or ""]
+    when = _mtime(path) if cards else None
+    return {"asof": f"{when:%d %b, %H:%M}" if when else None,
+            "currency": col[len("Price ("):-1] if col else "GBP", "cards": cards}
 
 
 def prices_for(folder):
     """read_card_prices for the CSVs in `folder` (price_search.py's default
     names)."""
-    return read_card_prices(os.path.join(folder, OFFERS_NAME), os.path.join(folder, GUIDE_NAME))
+    return read_card_prices(os.path.join(folder, OFFERS_NAME), os.path.join(folder, GUIDE_NAME),
+                            spares_path=os.path.join(folder, SPARE_PRICES_NAME))
 
 
 def prices_block(prices):

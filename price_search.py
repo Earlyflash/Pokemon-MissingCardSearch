@@ -33,9 +33,10 @@ import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 
 import marketplaces
-from marketplaces.base import (MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer, SearchContext,
-                               finish_key)
-from card_prices import read_card_prices, refresh_html
+from marketplaces.base import (FINISH_NORMAL, MATCH_LEVELS, MATCH_UNCERTAIN, MissingCard, Offer,
+                               SearchContext, finish_key)
+from card_prices import SPARE_PRICES_NAME, read_card_prices, refresh_html
+import spares_page
 from data_dir import data_path, ensure_parent
 from ordered import read_ordered, read_ordered_shops
 
@@ -400,12 +401,52 @@ def redraw_html(groups, available, args):
     refresh_overview(args)
 
 
+def spares_paths(args):
+    """(spares.csv from missing_cards.py, spare_prices.csv to write): next
+    to the missing cards file and --guide-out unless given."""
+    return (args.spares or os.path.join(os.path.dirname(os.path.abspath(args.missing_json)),
+                                        "spares.csv"),
+            args.spare_prices_out or os.path.join(os.path.dirname(os.path.abspath(args.guide_out)),
+                                                  SPARE_PRICES_NAME))
+
+
+def price_spares(plugins, make_ctx, currency, args):
+    """Price the cards in missing_cards.py's spares.csv with PulseAPI, if it
+    ran, into spare_prices.csv (price_guide.csv's columns) for the overview's
+    Spares section. Each set PulseAPI read for the missing cards is reused,
+    so this costs requests only for sets with spares but nothing missing.
+    Only plain prints are priced: PulseAPI's price is the standard print's.
+    Returns the number of prices written, or None if nothing was priced."""
+    pulse = next((p for p in plugins if p.id == "pulseapi"), None)
+    spares_in, spares_out = spares_paths(args)
+    if pulse is None or not os.path.isfile(spares_in):
+        return None
+    groups = [(s, [c for c in cards if c.finish in (None, FINISH_NORMAL)])
+              for s, cards in load_missing(spares_in, args.sets)]
+    groups = [(s, cards) for s, cards in groups if cards]
+    if not groups:
+        return None
+    print(f"Pricing {sum(len(cards) for _, cards in groups)} spare card(s) with PulseAPI...")
+    found, failures = run_plugin(pulse, groups, make_ctx(pulse))
+    rates = exchange_rates({o.currency.upper() for _, o in found}, currency)
+    ranked = rank_offers(groups, found, rates, args.include_uncertain)
+    ensure_parent(spares_out)
+    rows = write_csv(groups, ranked, currency, spares_out)
+    failed = f" ({failures} set(s) failed)" if failures else ""
+    print(f"Wrote {rows} spare price(s){failed} to {os.path.abspath(spares_out)}")
+    page = os.path.join(os.path.dirname(os.path.abspath(spares_in)), spares_page.PAGE_NAME)
+    if spares_page.build(spares_in, spares_out, page) is not None:
+        print(f"Updated the spares page {page}")
+    return rows
+
+
 def refresh_overview(args):
     """Put the prices just written into missing_cards.html (next to the
     missing cards file), if missing_cards.py has written one there."""
     overview = os.path.join(os.path.dirname(os.path.abspath(args.missing_json)),
                             "missing_cards.html")
-    if refresh_html(overview, read_card_prices(args.out, args.guide_out)):
+    if refresh_html(overview, read_card_prices(args.out, args.guide_out,
+                                               spares_path=spares_paths(args)[1])):
         print(f"Updated the prices on {overview}")
 
 
@@ -722,6 +763,13 @@ def build_arg_parser():
                    help="CSV for prices from price-guide marketplaces such as Cardmarket, which "
                         "publish one price per card rather than listings and are kept apart from "
                         "the offers (default: %(default)s).")
+    p.add_argument("--spares", metavar="FILE",
+                   help="Cards owned more than once, written by missing_cards.py, to price with "
+                        "PulseAPI for the overview's Spares section (default: spares.csv next to "
+                        "MISSING_FILE).")
+    p.add_argument("--spare-prices-out", metavar="FILE",
+                   help="CSV for the spares' PulseAPI prices, in --guide-out's format (default: "
+                        "spare_prices.csv next to --guide-out).")
     p.add_argument("--html-out", metavar="FILE",
                    help="HTML table to write, one row per missing card and one column per "
                         "marketplace, each price linking to its listing (default: "
@@ -788,12 +836,17 @@ def main(argv=None):
           f"across {len(groups)} set(s)...")
     cache_dir = None if args.no_cache else args.cache_dir
     rate_groups = {}  # shared by the plugins whose sites share a rate limit (Shopify's)
-    plugin_results = search_all(
-        plugins, groups,
-        lambda p: SearchContext(p, config={k: os.environ[k] for k in p.needs},
-                                rate_groups=rate_groups,
-                                cache_dir=cache_dir, cache_ttl=args.cache_ttl * 3600,
-                                verbose=args.verbose))
+    ctxs = {}  # one per plugin, kept for pricing the spares after the search
+
+    def make_ctx(p):
+        if p.id not in ctxs:
+            ctxs[p.id] = SearchContext(p, config={k: os.environ[k] for k in p.needs},
+                                       rate_groups=rate_groups,
+                                       cache_dir=cache_dir, cache_ttl=args.cache_ttl * 3600,
+                                       verbose=args.verbose)
+        return ctxs[p.id]
+
+    plugin_results = search_all(plugins, groups, make_ctx)
 
     guide_ids = {p.id for p in plugins if p.price_guide}
     offers = [pair for found, _ in plugin_results.values() for pair in found]
@@ -820,6 +873,7 @@ def main(argv=None):
     write_html(groups, listing_ranked, guide_ranked, plugins, currency, html_out,
                ordered=read_ordered_shops(args.ordered))
     print(f"Wrote the price table to {os.path.abspath(html_out)}")
+    price_spares(plugins, make_ctx, currency, args)
     refresh_overview(args)
 
 if __name__ == "__main__":

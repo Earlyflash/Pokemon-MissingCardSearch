@@ -34,7 +34,7 @@ Everything that's yours rather than the code's lives outside the repository,
 in `~/PokemonData` (or the folder named by the `POKEMON_DATA_DIR` environment
 variable), which is created on first use: the RareCandy export and login
 session, `missing_cards.csv`, `ordered.txt`, `ordered_arrived.txt` and `emails_filed.txt`,
-`missing_cards.html`, `offers.csv`, `price_guide.csv`, `price_table.html`, `deals_alerted.txt`, the Cardmarket wants
+`missing_cards.html`, `spares.csv`, `spares.html`, `offers.csv`, `price_guide.csv`, `spare_prices.csv`, `price_table.html`, `deals_alerted.txt`, the Cardmarket wants
 list, `.env`, the `.price_cache/` folder and `nightly_search.log`. Every
 default path below is in that folder, and a file given on the command line
 is read from or written to exactly where you say.
@@ -167,6 +167,53 @@ is a series or language with none at 10% or more, and the totals at the
 top count only the sets shown. Sets that couldn't be checked are listed at
 the end.
 
+### Spares
+
+Cards you own more than one copy of are listed in `spares.csv` next to
+`missing_cards.csv` (or where `--spares-out` says), from every set, whatever
+its completion: one row per card with how many copies are spare, the
+purchase price the export gives (the export doesn't say which currency
+that's in) and whether the card is in the set's base, i.e. numbered within
+its printed count (001-081 of Abyss Eye's 081) rather than a secret rare. A graded copy can be the one you keep but is never counted as a
+spare, and where the export says which finish each copy is (MEGA Dream ex,
+see above), each finish is a card of its own, so a normal print and its
+reverse holo aren't spares of each other.
+
+The overview ends with a **Spares** section, linked from a tile at the top:
+a tile per set, most spares first, each opening that set's spare cards
+with a ×N badge for the copies spare (hover it for the purchase price).
+price_search.py prices them with PulseAPI after each search, into
+`spare_prices.csv`, reusing the sets it has just read for the missing cards,
+so it costs no extra requests for sets that are missing a card. Spare base
+cards are only counted when they're worth more than £1 each
+(`--spares-min-price`) at Pulse prices: hundreds of bulk commons at a few
+pence each would inflate the total but can't be sold for anything. Secret
+rares always count. Each spare that's left shows its Pulse price and that
+times its copies, the tiles and the section say how many spares each set
+has and what they're worth, and the sets and cards are sorted most valuable
+first. Only plain prints are priced, since PulseAPI's price is the standard
+print's, and a base card with no Pulse price (PulseAPI sends none for some
+commons) isn't counted.
+
+#### The spares page (spares.html)
+
+For trading, `spares.html` (next to `spares.csv`, linked from the Spares
+section) lists every spare, bulk included, as one table: the card (with its
+English name), set and number, copies spare, PulseAPI's price for one, that
+times the copies, and what RareCandy says you paid. It's sorted most
+valuable first; search by English or Japanese name, number or set, pick a
+set, sort by price each, copies, set or name, and **Hide bulk** (base cards
+worth £1 or less, or unpriced) to see just what's worth trading. **Copy
+list** copies the cards shown as plain text, one per line ("Morpeko ex
+(モルペコex) · Abyss Eye M5 #115 · Japanese · ×1 · ~£21.30 each"), to paste
+into a message. The totals at the top are for every spare and for those
+that aren't bulk.
+
+missing_cards.py writes it with whatever prices the last search found, and
+price_search.py rewrites it once it has priced the spares, using the
+default £1 for bulk. To rebuild it by hand (say with a different bulk
+price): `python spares_page.py --min-price 2`.
+
 Each missing card's picture is shown (click one for a larger version);
 untick **Show card pictures** for a plain list, and the page remembers the
 choice. Pictures are only loaded for the set that's open. They come from TCGdex for English cards and from
@@ -213,6 +260,8 @@ include them, and fetching rarity costs one request per card.
 | `--out FILE` | Where to write the missing cards (default `missing_cards.csv` in `~/PokemonData`). |
 | `--html FILE` | Where to write the set overview (default `missing_cards.html` next to `--out`). |
 | `--html-min-complete PERCENT` | Leave sets under this much complete off the set overview (default `10`). |
+| `--spares-out FILE` | Where to write the cards you own more than once (default `spares.csv` next to `--out`); see [Spares](#spares). |
+| `--spares-min-price AMOUNT` | On the set overview, only count spares from a set's base (not its secret rares) whose Pulse price is more than this (default `1`). |
 | `--json FILE` | Also write the missing cards as JSON, grouped by set (see below). |
 | `--no-english-names` | Don't look up English names for non-English cards. |
 | `--ordered FILE` | Cards on order (default `ordered.txt` in `~/PokemonData`, if it exists). Any now in the collection are moved out to `--arrived`; see [Cards on order](#cards-on-order-orderedtxt). |
@@ -305,6 +354,8 @@ nobody has for sale.
 | `--currency CODE` | Currency to compare in (default `GBP`), converted with the same free rate service RareCandyExporter uses. |
 | `--out FILE` | Where to write the offers (default `offers.csv` in `~/PokemonData`). |
 | `--guide-out FILE` | Where to write price-guide prices, e.g. Cardmarket's (default `price_guide.csv` in `~/PokemonData`). |
+| `--spares FILE` | The spares missing_cards.py listed, priced with PulseAPI when it's one of the marketplaces searched (default `spares.csv` next to the missing cards file); see [Spares](#spares). |
+| `--spare-prices-out FILE` | Where to write the spares' PulseAPI prices (default `spare_prices.csv` next to `--guide-out`). |
 | `--html-out FILE` | Where to write the HTML price table (default `price_table.html` next to `--out`). |
 | `--html-only` | Don't search: redraw the HTML table from the last run's `--out` and `--guide-out` CSVs, e.g. after editing `ordered.txt` or re-running missing_cards.py (cards no longer missing drop out). |
 | `--ordered FILE` | Cards already ordered, shaded and tagged in the HTML table (default `ordered.txt` in `~/PokemonData`, if it exists). |
@@ -397,7 +448,7 @@ did goes to `nightly_search.log`.
 
 ### Reading the pages online
 
-`publish.sh` uploads `missing_cards.html` and `price_table.html` to
+`publish.sh` uploads `missing_cards.html`, `price_table.html` and `spares.html` to
 [Cloudflare Pages](https://pages.cloudflare.com) with an index page linking
 them, so you can read them from anywhere without exposing your own machine.
 Cloudflare hosts the copies; nothing connects back to you.

@@ -54,6 +54,21 @@ class ReadCardPricesTests(unittest.TestCase):
         self.assertEqual(p["currency"], "GBP")
         self.assertIsNotNone(p["asof"])
 
+    def test_spares_only_get_the_pulse_price(self):
+        with tempfile.TemporaryDirectory() as d:
+            o, g, s = (os.path.join(d, n) for n in ("offers.csv", "guide.csv", "spares.csv"))
+            write_rows(o, [])
+            write_rows(g, [row("M2a-002", "pulseapi", "4.00", url="p2")])
+            write_rows(s, [row("M2a-001", "pulseapi", "1.25", url="p1"),
+                           row("M2a-001", "cardmarket", "0.90", "1.05", "EUR", "x")])
+            p = card_prices.read_card_prices(o, g, names={}, spares_path=s)
+            missing = card_prices.read_card_prices(o, g, names={},
+                                                   spares_path=os.path.join(d, "none.csv"))
+        self.assertEqual(p["cards"]["M2a-001"], {"pulse": ["1.25", "p1", ""]})
+        self.assertEqual(p["cards"]["M2a-002"]["pulse"][0], "4.00")
+        # No spares file yet is fine.
+        self.assertNotIn("M2a-001", missing["cards"])
+
     def test_cardmarket_without_trend_uses_from_price(self):
         p = self.prices(offers=[], guide=[row("M1L-064", "cardmarket", "3.34", "4", "EUR", "x")])
         self.assertEqual(p["cards"]["M1L-064"]["cm"][0], "3.34")

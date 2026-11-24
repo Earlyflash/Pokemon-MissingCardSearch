@@ -1,5 +1,5 @@
 #!/bin/sh
-# Uploads missing_cards.html and price_table.html from ~/PokemonData (or
+# Uploads missing_cards.html, price_table.html and spares.html from ~/PokemonData (or
 # $POKEMON_DATA_DIR) to Cloudflare Pages, with a small index.html linking
 # them, so they can be read from anywhere without opening up this machine.
 # Needs CLOUDFLARE_API_TOKEN (a token with "Account > Cloudflare Pages >
@@ -30,7 +30,7 @@ fi
 SITE="$(mktemp -d)" || exit 1
 trap 'rm -rf "$SITE"' EXIT
 found=""
-for page in missing_cards.html price_table.html; do
+for page in missing_cards.html price_table.html spares.html; do
     if [ -f "$DATA_DIR/$page" ]; then
         cp "$DATA_DIR/$page" "$SITE/" && found="$found $page"
     else
@@ -49,6 +49,7 @@ done
         case "$page" in
             missing_cards.html) label="Missing cards" ;;
             price_table.html) label="Prices" ;;
+            spares.html) label="Spares" ;;
         esac
         echo "<li><a href=\"$page\">$label</a></li>"
     done
